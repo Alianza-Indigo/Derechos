@@ -4,6 +4,7 @@ import { Card, CardHeader } from "@/components/ui/card";
 import { LinkButton } from "@/components/ui/button";
 import { credentialQrDataUrl, credentialUrl } from "@/lib/qr";
 import { formatDate } from "@/lib/utils";
+import { resolveBaseUrl } from "@/server/base-url";
 import { getMemberSelf, getMyReports } from "@/server/queries/app";
 
 const credentialTone: Record<string, "green" | "amber" | "red" | "slate"> = {
@@ -16,7 +17,8 @@ const credentialTone: Record<string, "green" | "amber" | "red" | "slate"> = {
 export default async function PortalHomePage() {
   const member = await getMemberSelf();
   const reports = await getMyReports();
-  const qr = member?.credentialSlug ? await credentialQrDataUrl(member.credentialSlug) : null;
+  const baseUrl = await resolveBaseUrl();
+  const qr = member?.credentialSlug ? await credentialQrDataUrl(member.credentialSlug, baseUrl) : null;
 
   return (
     <div className="space-y-6">
@@ -50,7 +52,7 @@ export default async function PortalHomePage() {
               <p className="text-slate-600">{member.memberNumber}</p>
               <p className="flex items-center gap-2">Estado: <Badge tone={credentialTone[member.credentialStatus] ?? "slate"}>{member.credentialStatus}</Badge></p>
               {member.credentialExpiresAt ? <p className="text-xs text-slate-500">Vigencia: {formatDate(member.credentialExpiresAt)}</p> : null}
-              {member.credentialSlug ? <p className="text-xs text-slate-500">Verificacion publica: {credentialUrl(member.credentialSlug)}</p> : null}
+              {member.credentialSlug ? <p className="text-xs text-slate-500">Verificacion publica: {credentialUrl(member.credentialSlug, baseUrl)}</p> : null}
             </div>
           </div>
         </Card>

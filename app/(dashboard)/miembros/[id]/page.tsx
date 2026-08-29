@@ -7,6 +7,7 @@ import { MemberAccessForm } from "@/components/forms/member-access";
 import { MemberPhotoUploader } from "@/components/portal/photo-uploader";
 import { credentialQrDataUrl, credentialUrl } from "@/lib/qr";
 import { formatDate } from "@/lib/utils";
+import { resolveBaseUrl } from "@/server/base-url";
 import { getCurrentUser, getMemberById, getTerritoryName } from "@/server/queries/app";
 import { hasAnyPermission } from "@/server/permissions/rbac";
 
@@ -23,7 +24,8 @@ export default async function MemberDetailPage({ params }: { params: Promise<{ i
   if (!member) notFound();
   const user = await getCurrentUser();
   const canManage = hasAnyPermission(user, ["write:territory", "*"]);
-  const qr = await credentialQrDataUrl(member.credentialSlug);
+  const baseUrl = await resolveBaseUrl();
+  const qr = await credentialQrDataUrl(member.credentialSlug, baseUrl);
 
   return (
     <div className="grid gap-6 xl:grid-cols-[0.8fr_1.2fr]">
@@ -34,7 +36,7 @@ export default async function MemberDetailPage({ params }: { params: Promise<{ i
           <img src={qr} alt="QR de credencial" className="mx-auto size-52" />
           <p className="mt-3 font-semibold">{member.fullName}</p>
           <p className="text-sm text-slate-600">{member.memberNumber}</p>
-          <p className="mt-2 text-xs text-slate-500">{credentialUrl(member.credentialSlug)}</p>
+          <p className="mt-2 text-xs text-slate-500">{credentialUrl(member.credentialSlug, baseUrl)}</p>
           <div className="mt-3 flex items-center justify-center gap-2 text-sm">
             <span className="text-slate-600">Estado:</span>
             <Badge tone={credentialTone[member.credentialStatus] ?? "slate"}>{member.credentialStatus}</Badge>

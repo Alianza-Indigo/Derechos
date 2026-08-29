@@ -6,6 +6,7 @@ import { APP_NAME } from "@/lib/constants";
 import { credentialQrDataUrl } from "@/lib/qr";
 import { formatDate } from "@/lib/utils";
 import { logCredentialVerification } from "@/server/audit/credential";
+import { resolveBaseUrl } from "@/server/base-url";
 import { getMemberByCredentialSlug, getTerritoryName } from "@/server/queries/app";
 
 export default async function CredentialPage({ params }: { params: Promise<{ slug: string }> }) {
@@ -18,7 +19,7 @@ export default async function CredentialPage({ params }: { params: Promise<{ slu
     ip: requestHeaders.get("x-forwarded-for")?.split(",")[0]?.trim(),
     userAgent: requestHeaders.get("user-agent"),
   });
-  const qr = await credentialQrDataUrl(slug);
+  const qr = await credentialQrDataUrl(slug, await resolveBaseUrl());
 
   return (
     <main className="grid min-h-screen place-items-center bg-slate-100 px-4 py-8">
