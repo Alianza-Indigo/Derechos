@@ -224,6 +224,16 @@ export const memberProfileSchema = z.object({
   address: z.string().min(5, "Captura tu domicilio o referencia."),
 });
 
+export const memberStatusSchema = z.object({
+  memberId: z.string().min(1),
+  status: z.enum(["pendiente", "activo", "suspendido", "baja", "fallecido"]),
+});
+
+export const memberDeleteSchema = z.object({
+  memberId: z.string().min(1),
+  confirm: z.literal("ELIMINAR"),
+});
+
 export const memberPhotoSchema = z.object({
   memberId: z.string().optional(),
   photoUrl: z.string().min(3, "Sube una fotografia valida."),

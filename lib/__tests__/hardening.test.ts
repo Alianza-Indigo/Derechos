@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { intensityStyle } from "@/lib/intensity";
-import { aiFeedbackSchema, caseReassignSchema, credentialActionSchema, locationPurgeSchema, memberAccessSchema, memberPhotoSchema, memberProfileSchema, memberReportSchema, roleAssignmentSchema, userFormSchema } from "@/lib/validators";
+import { aiFeedbackSchema, caseReassignSchema, credentialActionSchema, locationPurgeSchema, memberAccessSchema, memberDeleteSchema, memberPhotoSchema, memberProfileSchema, memberReportSchema, memberStatusSchema, roleAssignmentSchema, userFormSchema } from "@/lib/validators";
 
 describe("endurecimiento del review", () => {
   it("escala la intensidad del mapa por valor y maximo", () => {
@@ -71,5 +71,13 @@ describe("endurecimiento del review", () => {
     expect(memberPhotoSchema.safeParse({ photoUrl: "https://blob/x.png" }).success).toBe(true);
     expect(memberPhotoSchema.safeParse({ memberId: "m1", photoUrl: "https://blob/x.png" }).success).toBe(true);
     expect(memberPhotoSchema.safeParse({ photoUrl: "" }).success).toBe(false);
+  });
+
+  it("valida el cambio de estado y el borrado del miembro", () => {
+    expect(memberStatusSchema.safeParse({ memberId: "m1", status: "baja" }).success).toBe(true);
+    expect(memberStatusSchema.safeParse({ memberId: "m1", status: "inexistente" }).success).toBe(false);
+    expect(memberDeleteSchema.safeParse({ memberId: "m1", confirm: "ELIMINAR" }).success).toBe(true);
+    expect(memberDeleteSchema.safeParse({ memberId: "m1", confirm: "eliminar" }).success).toBe(false);
+    expect(memberDeleteSchema.safeParse({ memberId: "m1" }).success).toBe(false);
   });
 });

@@ -4,6 +4,7 @@ import { Card, CardHeader } from "@/components/ui/card";
 import { DataTable } from "@/components/ui/table";
 import { CredentialManager } from "@/components/forms/credential-manager";
 import { MemberAccessForm } from "@/components/forms/member-access";
+import { DeleteMemberForm, MemberStatusForm } from "@/components/forms/member-lifecycle";
 import { MemberPhotoUploader } from "@/components/portal/photo-uploader";
 import { credentialQrDataUrl, credentialUrl } from "@/lib/qr";
 import { formatDate } from "@/lib/utils";
@@ -24,6 +25,7 @@ export default async function MemberDetailPage({ params }: { params: Promise<{ i
   if (!member) notFound();
   const user = await getCurrentUser();
   const canManage = hasAnyPermission(user, ["write:territory", "*"]);
+  const canDelete = hasAnyPermission(user, ["*"]);
   const baseUrl = await resolveBaseUrl();
   const qr = await credentialQrDataUrl(member.credentialSlug, baseUrl);
 
@@ -75,6 +77,20 @@ export default async function MemberDetailPage({ params }: { params: Promise<{ i
           <tr><td className="px-4 py-3 font-medium">Domicilio</td><td className="px-4 py-3">{member.address}</td></tr>
           <tr><td className="px-4 py-3 font-medium">Ingreso</td><td className="px-4 py-3">{formatDate(member.joinedAt)}</td></tr>
         </DataTable>
+        {canManage ? (
+          <div className="mt-4 border-t border-slate-100 pt-4">
+            <p className="mb-1 text-sm font-medium text-slate-700">Estado del miembro</p>
+            <p className="mb-2 text-xs text-slate-500">Dar de baja revoca la credencial y desactiva el acceso al portal. Es reversible reactivando el estado a &quot;activo&quot;.</p>
+            <MemberStatusForm memberId={member.id} status={member.status} />
+          </div>
+        ) : null}
+        {canDelete ? (
+          <div className="mt-4 border-t border-rose-100 pt-4">
+            <p className="mb-1 text-sm font-medium text-rose-700">Zona de peligro</p>
+            <p className="mb-2 text-xs text-slate-500">Borrado definitivo (solo super administrador). Solo procede si el miembro no tiene cuenta de portal ni historial ligado; de lo contrario, da de baja.</p>
+            <DeleteMemberForm memberId={member.id} />
+          </div>
+        ) : null}
       </Card>
     </div>
   );

@@ -24,10 +24,12 @@ import {
   locationPauseSchema,
   locationSettingSchema,
   memberAccessSchema,
+  memberDeleteSchema,
   memberFormSchema,
   memberPhotoSchema,
   memberProfileSchema,
   memberReportSchema,
+  memberStatusSchema,
   metricSchema,
   organizationSchema,
   prevalenceRecordSchema,
@@ -121,6 +123,71 @@ export async function createMemberAction(_: ActionResult | null, formData: FormD
   await writeAuditLog({ actorId: user.id, action: "member.create", entityType: "member", entityId: id, after: { ...parsed.data, memberNumber } });
   await writeAuditLog({ actorId: user.id, action: "credential.issue", entityType: "member_credential", entityId: slug, after: { publicSlug: slug } });
   redirect(`/miembros/${id}`);
+}
+
+// Baja logica / reactivacion de un miembro. Al dar de baja se revoca la
+// credencial y se desactiva la cuenta del portal; al reactivar se restablecen.
+export async function setMemberStatusAction(_: ActionResult | null, formData: FormData): Promise<ActionResult> {
+  const user = await getCurrentUser();
+  if (!can(user, ["write:territory", "*"])) {
+    return DENIED;
+  }
+  const parsed = memberStatusSchema.safeParse(Object.fromEntries(formData));
+  if (!parsed.success) {
+    return { ok: false, message: parsed.error.issues[0]?.message ?? "Datos invalidos." };
+  }
+  const member = await getMemberById(parsed.data.memberId);
+  if (!member) {
+    return { ok: false, message: "No tienes acceso a este miembro." };
+  }
+  const db = getDb();
+  const [record] = await db.select().from(schema.members).where(eq(schema.members.id, parsed.data.memberId)).limit(1);
+  await db.update(schema.members).set({ status: parsed.data.status, updatedAt: new Date() }).where(eq(schema.members.id, parsed.data.memberId));
+
+  if (parsed.data.status === "baja" || parsed.data.status === "fallecido") {
+    await db.update(schema.memberCredentials).set({ status: "revocada" }).where(eq(schema.memberCredentials.memberId, parsed.data.memberId));
+    if (record.userId) {
+      await db.update(schema.users).set({ status: "disabled", updatedAt: new Date() }).where(eq(schema.users.id, record.userId));
+    }
+  } else if (parsed.data.status === "activo") {
+    await db.update(schema.memberCredentials).set({ status: "activa" }).where(eq(schema.memberCredentials.memberId, parsed.data.memberId));
+    if (record.userId) {
+      await db.update(schema.users).set({ status: "active", updatedAt: new Date() }).where(eq(schema.users.id, record.userId));
+    }
+  }
+  await writeAuditLog({ actorId: user.id, action: "member.status_change", entityType: "member", entityId: parsed.data.memberId, before: { status: record.status }, after: { status: parsed.data.status } });
+  revalidatePath(`/miembros/${parsed.data.memberId}`);
+  revalidatePath("/miembros");
+  return { ok: true, message: parsed.data.status === "baja" ? "Miembro dado de baja (credencial revocada y acceso desactivado)." : "Estado del miembro actualizado." };
+}
+
+// Borrado definitivo, solo super_admin y solo si el miembro no tiene cuenta de
+// portal ligada (lo que implica que no tiene casos abiertos a su nombre).
+export async function deleteMemberAction(_: ActionResult | null, formData: FormData): Promise<ActionResult> {
+  const user = await getCurrentUser();
+  if (!can(user, ["*"])) {
+    return { ok: false, message: "Solo un super administrador puede eliminar miembros de forma definitiva." };
+  }
+  const parsed = memberDeleteSchema.safeParse(Object.fromEntries(formData));
+  if (!parsed.success) {
+    return { ok: false, message: "Escribe ELIMINAR para confirmar el borrado definitivo." };
+  }
+  const db = getDb();
+  const [record] = await db.select().from(schema.members).where(eq(schema.members.id, parsed.data.memberId)).limit(1);
+  if (!record) {
+    return { ok: false, message: "El miembro no existe." };
+  }
+  if (record.userId) {
+    return { ok: false, message: "Este miembro tiene cuenta de portal e historial ligado. Da de baja en lugar de eliminar." };
+  }
+  const credentials = await db.select({ id: schema.memberCredentials.id }).from(schema.memberCredentials).where(eq(schema.memberCredentials.memberId, parsed.data.memberId));
+  for (const credential of credentials) {
+    await db.delete(schema.credentialVerificationLogs).where(eq(schema.credentialVerificationLogs.credentialId, credential.id));
+  }
+  await db.delete(schema.memberCredentials).where(eq(schema.memberCredentials.memberId, parsed.data.memberId));
+  await db.delete(schema.members).where(eq(schema.members.id, parsed.data.memberId));
+  await writeAuditLog({ actorId: user.id, action: "member.delete", entityType: "member", entityId: parsed.data.memberId, before: { memberNumber: record.memberNumber, fullName: record.fullName } });
+  redirect("/miembros");
 }
 
 // --------------------------------------------------------------------------
