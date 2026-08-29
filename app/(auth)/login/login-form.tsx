@@ -15,11 +15,12 @@ export function LoginForm() {
       email: formData.get("email"),
       password: formData.get("password"),
       redirect: false,
-      callbackUrl: "/dashboard",
     });
     setPending(false);
     if (result?.ok) {
-      window.location.href = result.url || "/dashboard";
+      // Redireccion relativa al mismo origen: no depende de NEXTAUTH_URL, asi
+      // el login funciona aunque esa variable apunte a otra URL.
+      window.location.href = "/dashboard";
       return;
     }
     setError("Credenciales invalidas o usuario inactivo.");
@@ -29,11 +30,11 @@ export function LoginForm() {
     <form action={submit} className="space-y-4">
       <label>
         <span className="text-sm font-medium text-slate-700">Correo</span>
-        <input name="email" defaultValue="admin@demo.org" type="email" className="mt-1 h-10 w-full rounded-md border border-slate-300 px-3 text-sm" />
+        <input name="email" type="email" autoComplete="username" placeholder="tu@correo.org" className="mt-1 h-10 w-full rounded-md border border-slate-300 px-3 text-sm" />
       </label>
       <label>
         <span className="text-sm font-medium text-slate-700">Contrasena</span>
-        <input name="password" defaultValue="demo-seguro" type="password" className="mt-1 h-10 w-full rounded-md border border-slate-300 px-3 text-sm" />
+        <input name="password" type="password" autoComplete="current-password" className="mt-1 h-10 w-full rounded-md border border-slate-300 px-3 text-sm" />
       </label>
       {error ? <p className="text-sm text-rose-700">{error}</p> : null}
       <Button type="submit" className="w-full" disabled={pending}>{pending ? "Entrando..." : "Entrar al panel"}</Button>
