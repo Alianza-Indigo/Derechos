@@ -1,4 +1,5 @@
-import { organization, reports, territories, users, members, cases } from "@/lib/mock-data";
+import { cache } from "react";
+import { organization, reports } from "@/lib/mock-data";
 import type { HumanRightsCase, Member, User } from "@/lib/types";
 import { eq, desc } from "drizzle-orm";
 import { getServerSession } from "next-auth";
@@ -7,13 +8,25 @@ import * as schema from "@/drizzle/schema";
 import { getDb } from "@/server/db";
 import { authOptions } from "@/server/auth/options";
 import { canAccessCase, canAccessTerritory, canViewSensitive, hasAnyPermission } from "@/server/permissions/rbac";
-import { stableUuid } from "@/lib/stable-id";
 
-// La aplicacion lee siempre de Postgres (getDb exige DATABASE_URL). El modulo
-// de datos semilla solo se usa para resolver nombres de referencia estaticos
-// (territorios/usuarios) y numeradores.
+// La aplicacion lee siempre de Postgres (getDb exige DATABASE_URL). Los nombres
+// de referencia (territorios/usuarios) se cargan en una cache por-peticion para
+// que getTerritoryName/getUserName sigan siendo sincronos dentro del JSX.
+let territoryNameCache = new Map<string, string>();
+let userNameCache = new Map<string, string>();
+
+const warmReference = cache(async () => {
+  const db = getDb();
+  const [territoryRows, userRows] = await Promise.all([
+    db.select({ id: schema.territories.id, name: schema.territories.name }).from(schema.territories),
+    db.select({ id: schema.users.id, name: schema.users.name }).from(schema.users),
+  ]);
+  territoryNameCache = new Map(territoryRows.map((row) => [row.id, row.name]));
+  userNameCache = new Map(userRows.map((row) => [row.id, row.name]));
+});
 
 export async function getCurrentUser(): Promise<User> {
+  await warmReference();
   const session = await getServerSession(authOptions);
   const sessionEmail = session?.user?.email?.toLowerCase();
   if (!sessionEmail) {
@@ -294,6 +307,7 @@ export async function getCommissionById(id: string) {
 }
 
 export async function getAssistantData() {
+  await warmReference();
   const db = getDb();
   const [providerRows, promptRows, conversationRows, messageRows] = await Promise.all([
     db.select().from(schema.aiProviderConfigs),
@@ -327,6 +341,7 @@ export async function getAssistantData() {
 }
 
 export async function getPromptById(id: string) {
+  await warmReference();
   const db = getDb();
   const [prompt] = await db.select().from(schema.aiPromptTemplates).where(eq(schema.aiPromptTemplates.id, id)).limit(1);
   return prompt ? dbPromptToDomain(prompt) : undefined;
@@ -413,6 +428,7 @@ export async function getAuditLogs() {
 }
 
 export async function getConfiguration() {
+  await warmReference();
   const db = getDb();
   const [orgRows, providerRows, settingRows] = await Promise.all([
     db.select().from(schema.organizations).limit(1),
@@ -466,7 +482,7 @@ function filterText<T>(items: T[], query: string | undefined, fields: (item: T) 
 }
 
 export function getTerritoryName(id?: string) {
-  return territories.find((territory) => territory.id === id || stableUuid(territory.id) === id)?.name ?? "Sin territorio";
+  return (id && territoryNameCache.get(id)) || "Sin territorio";
 }
 
 function dbUserToDomain(user: typeof schema.users.$inferSelect, roles: User["roles"], territoryId?: string): User {
@@ -627,13 +643,5 @@ function dbPromptToDomain(prompt: typeof schema.aiPromptTemplates.$inferSelect) 
 }
 
 export function getUserName(id?: string) {
-  return users.find((user) => user.id === id || stableUuid(user.id) === id)?.name ?? "Sin asignar";
-}
-
-export function nextMemberNumber(recordList: Member[] = members) {
-  return `ORG-CHH-${String(recordList.length + 1).padStart(6, "0")}`;
-}
-
-export function nextCaseNumber(recordList: HumanRightsCase[] = cases) {
-  return `CASO-2026-CHH-${String(recordList.length + 1).padStart(4, "0")}`;
+  return (id && userNameCache.get(id)) || "Sin asignar";
 }

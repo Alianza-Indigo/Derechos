@@ -9,10 +9,6 @@ export async function logCredentialVerification(input: {
   userAgent?: string | null;
 }) {
   const db = getDb();
-  if (!db) {
-    return;
-  }
-
   const [credential] = await db
     .select({ id: schema.memberCredentials.id })
     .from(schema.memberCredentials)
