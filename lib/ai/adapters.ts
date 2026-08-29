@@ -39,8 +39,19 @@ export async function runAssistant({ prompt, message, context }: RunAssistantInp
     };
   }
 
-  const selected = await resolveProvider(prompt);
-  const apiKey = selected.apiKey || process.env[ENV_BY_PROVIDER[selected.key]] || "";
+  const { selected, candidates } = await resolveProvider(prompt);
+  const keyFor = (p: ResolvedProvider) => p.apiKey || process.env[ENV_BY_PROVIDER[p.key]] || "";
+  let active = selected;
+  let apiKey = keyFor(selected);
+  // Fallback por prioridad si el proveedor elegido no tiene credenciales.
+  if (!apiKey && process.env.AI_ENABLE_PROVIDER_FALLBACK === "true") {
+    const alternative = candidates.find((candidate) => candidate.key !== selected.key && keyFor(candidate));
+    if (alternative) {
+      active = alternative;
+      apiKey = keyFor(alternative);
+    }
+  }
+  const selectedProvider = active;
   const contextText = JSON.stringify(context, null, 2).slice(0, 4000);
   const userPrompt = prompt.userPromptTemplate
     .replaceAll("{{contexto}}", contextText)
@@ -50,15 +61,15 @@ export async function runAssistant({ prompt, message, context }: RunAssistantInp
 
   if (!apiKey) {
     return {
-      output: buildLocalDraft(prompt, message, selected.displayName),
-      provider: selected.key,
-      model: selected.defaultModel,
+      output: buildLocalDraft(prompt, message, selectedProvider.displayName),
+      provider: selectedProvider.key,
+      model: selectedProvider.defaultModel,
       status: "simulated",
       tokenUsage: { approximateInput: userPrompt.length / 4, approximateOutput: 220 },
     };
   }
 
-  const model = getModel(selected.key, prompt.model || selected.defaultModel, apiKey);
+  const model = getModel(selectedProvider.key, prompt.model || selectedProvider.defaultModel, apiKey);
   const result = await generateText({
     model,
     system: prompt.systemPrompt,
@@ -68,16 +79,26 @@ export async function runAssistant({ prompt, message, context }: RunAssistantInp
 
   return {
     output: `${result.text}\n\nNota: este contenido es un borrador revisable; la decision final corresponde a personal autorizado.`,
-    provider: selected.key,
-    model: prompt.model || selected.defaultModel,
+    provider: selectedProvider.key,
+    model: prompt.model || selectedProvider.defaultModel,
     status: "completed",
     tokenUsage: result.usage ?? {},
   };
 }
 
-async function resolveProvider(prompt: AiPromptTemplate): Promise<ResolvedProvider> {
+function toResolved(config: typeof aiProviderConfigs.$inferSelect): ResolvedProvider {
+  return {
+    key: config.providerKey,
+    displayName: config.displayName,
+    defaultModel: config.defaultModel,
+    apiKey: config.apiKey,
+  };
+}
+
+async function resolveProvider(prompt: AiPromptTemplate): Promise<{ selected: ResolvedProvider; candidates: ResolvedProvider[] }> {
   const db = getDb();
   const configs = await db.select().from(aiProviderConfigs).orderBy(aiProviderConfigs.priority);
+  const candidates = configs.map(toResolved);
   const defaultProvider = (process.env.AI_DEFAULT_PROVIDER as ResolvedProvider["key"]) || "openai";
   const providerKey = prompt.providerKey === "global" ? defaultProvider : prompt.providerKey;
   const provider =
@@ -86,15 +107,13 @@ async function resolveProvider(prompt: AiPromptTemplate): Promise<ResolvedProvid
     configs[0];
 
   if (!provider) {
-    return { key: "openai", displayName: "ChatGPT/OpenAI", defaultModel: process.env.AI_DEFAULT_MODEL || "gpt-5-mini", apiKey: null };
+    return {
+      selected: { key: "openai", displayName: "ChatGPT/OpenAI", defaultModel: process.env.AI_DEFAULT_MODEL || "gpt-5-mini", apiKey: null },
+      candidates,
+    };
   }
 
-  return {
-    key: provider.providerKey,
-    displayName: provider.displayName,
-    defaultModel: provider.defaultModel,
-    apiKey: provider.apiKey,
-  };
+  return { selected: toResolved(provider), candidates };
 }
 
 function getModel(provider: ResolvedProvider["key"], model: string, apiKey: string) {

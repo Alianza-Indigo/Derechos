@@ -17,7 +17,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Limite temporal de pruebas IA alcanzado." }, { status: 429 });
   }
 
-  const body = (await request.json()) as { promptId?: string; message?: string };
+  const body = (await request.json()) as { promptId?: string; message?: string; providerKey?: "gemini" | "openai" | "anthropic" };
   const db = getDb();
   const [dbPrompt] = body.promptId
     ? await db.select().from(schema.aiPromptTemplates).where(eq(schema.aiPromptTemplates.id, body.promptId)).limit(1)
@@ -35,7 +35,7 @@ export async function POST(request: NextRequest) {
     systemPrompt: dbPrompt.systemPrompt,
     userPromptTemplate: dbPrompt.userPromptTemplate,
     variables: dbPrompt.variables,
-    providerKey: dbPrompt.providerKey,
+    providerKey: body.providerKey ?? dbPrompt.providerKey,
     model: dbPrompt.model ?? undefined,
     temperature: Number(dbPrompt.temperature),
     enabled: dbPrompt.enabled,

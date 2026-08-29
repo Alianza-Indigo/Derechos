@@ -55,6 +55,23 @@ export const prevalenceRecordSchema = z.object({
   measuredAt: z.string().min(1),
 });
 
+export const organizationSchema = z.object({
+  name: z.string().min(2, "Captura el nombre publico."),
+  legalName: z.string().optional(),
+  country: z.string().min(2, "Captura el pais base."),
+  logoUrl: z.string().optional(),
+  primaryColor: z.string().regex(/^#[0-9a-fA-F]{6}$/, "Usa un color hexadecimal (#RRGGBB)."),
+  geolocationEnabled: formBoolean,
+  aiEnabled: formBoolean,
+});
+
+export const locationSettingSchema = z.object({
+  id: z.string().min(1),
+  enabled: formBoolean,
+  mode: z.enum(["disabled", "manual_check_in", "during_commission", "active_shift"]),
+  retentionDays: z.coerce.number().int().min(1).max(365),
+});
+
 export const providerConfigSchema = z.object({
   providerKey: z.enum(["gemini", "openai", "anthropic"]),
   enabled: formBoolean,

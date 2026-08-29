@@ -4,8 +4,10 @@ import { eq } from "drizzle-orm";
 import CredentialsProvider from "next-auth/providers/credentials";
 import * as schema from "@/drizzle/schema";
 import { getDb } from "@/server/db";
+import { rateLimit } from "@/lib/rate-limit";
 
 export const authOptions: NextAuthOptions = {
+  secret: process.env.NEXTAUTH_SECRET || process.env.AUTH_SECRET,
   session: {
     strategy: "jwt",
   },
@@ -16,10 +18,15 @@ export const authOptions: NextAuthOptions = {
         email: { label: "Correo", type: "email" },
         password: { label: "Contrasena", type: "password" },
       },
-      async authorize(credentials) {
+      async authorize(credentials, req) {
         const email = credentials?.email?.toLowerCase().trim();
         const password = credentials?.password;
         if (!email || !password) {
+          return null;
+        }
+        const forwarded = (req?.headers?.["x-forwarded-for"] as string | undefined)?.split(",")[0]?.trim();
+        const limit = await rateLimit(`login:${forwarded || "local"}`, 8, 60);
+        if (!limit.allowed) {
           return null;
         }
         const db = getDb();

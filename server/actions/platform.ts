@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { eq, sql } from "drizzle-orm";
 import * as schema from "@/drizzle/schema";
 import { runAssistant } from "@/lib/ai/adapters";
+import { normalizeSearch } from "@/lib/utils";
 import {
   aiRunSchema,
   caseFormSchema,
@@ -13,7 +14,9 @@ import {
   commissionFormSchema,
   evidenceFormSchema,
   eventFormSchema,
+  locationSettingSchema,
   memberFormSchema,
+  organizationSchema,
   prevalenceRecordSchema,
   providerConfigSchema,
   promptTemplateSchema,
@@ -60,6 +63,15 @@ export async function createMemberAction(_: ActionResult | null, formData: FormD
     .limit(1);
   if (duplicate.length) {
     return { ok: false, message: "Ya existe un miembro con ese correo o telefono." };
+  }
+  // Deteccion de posible duplicado por nombre similar en el mismo territorio.
+  const territoryMembers = await db
+    .select({ fullName: schema.members.fullName })
+    .from(schema.members)
+    .where(eq(schema.members.territoryId, parsed.data.territoryId));
+  const normalizedNew = normalizeSearch(parsed.data.fullName);
+  if (territoryMembers.some((member) => normalizeSearch(member.fullName) === normalizedNew)) {
+    return { ok: false, message: "Ya existe un miembro con un nombre muy similar en ese territorio. Verifica posibles duplicados." };
   }
 
   const [{ total }] = await db.select({ total: sql<number>`count(*)::int` }).from(schema.members);
@@ -509,6 +521,134 @@ export async function pruneLocationRetentionAction(): Promise<ActionResult> {
   `);
   await writeAuditLog({ actorId: "system", action: "geolocation.retention_prune", entityType: "delegate_location_ping", entityId: "bulk" });
   return { ok: true, message: "Retencion de ubicaciones aplicada." };
+}
+
+// --------------------------------------------------------------------------
+// Configuracion institucional
+// --------------------------------------------------------------------------
+export async function updateOrganizationAction(_: ActionResult | null, formData: FormData): Promise<ActionResult> {
+  const user = await getCurrentUser();
+  if (!can(user, ["write:config"])) {
+    return DENIED;
+  }
+  const parsed = organizationSchema.safeParse(Object.fromEntries(formData));
+  if (!parsed.success) {
+    return { ok: false, message: parsed.error.issues[0]?.message ?? "Datos invalidos." };
+  }
+  const db = getDb();
+  const [existing] = await db.select({ id: schema.organizations.id }).from(schema.organizations).limit(1);
+  const values = {
+    name: parsed.data.name,
+    legalName: parsed.data.legalName || null,
+    logoUrl: parsed.data.logoUrl || null,
+    country: parsed.data.country,
+    primaryColor: parsed.data.primaryColor,
+    geolocationEnabled: parsed.data.geolocationEnabled,
+    aiEnabled: parsed.data.aiEnabled,
+    updatedAt: new Date(),
+  };
+  if (existing) {
+    await db.update(schema.organizations).set(values).where(eq(schema.organizations.id, existing.id));
+  } else {
+    await db.insert(schema.organizations).values(values);
+  }
+  await writeAuditLog({ actorId: user.id, action: "organization.update", entityType: "organization", entityId: existing?.id ?? "org", after: values });
+  revalidatePath("/configuracion");
+  return { ok: true, message: "Configuracion institucional actualizada." };
+}
+
+export async function updateLocationSettingAction(_: ActionResult | null, formData: FormData): Promise<ActionResult> {
+  const user = await getCurrentUser();
+  if (!can(user, ["write:config"])) {
+    return DENIED;
+  }
+  const parsed = locationSettingSchema.safeParse(Object.fromEntries(formData));
+  if (!parsed.success) {
+    return { ok: false, message: parsed.error.issues[0]?.message ?? "Datos invalidos." };
+  }
+  const db = getDb();
+  await db.update(schema.locationTrackingSettings).set({
+    enabled: parsed.data.enabled,
+    mode: parsed.data.mode,
+    retentionDays: parsed.data.retentionDays,
+    updatedBy: user.id,
+    updatedAt: new Date(),
+  }).where(eq(schema.locationTrackingSettings.id, parsed.data.id));
+  await writeAuditLog({ actorId: user.id, action: "location_setting.update", entityType: "location_tracking_setting", entityId: parsed.data.id, after: { enabled: parsed.data.enabled, mode: parsed.data.mode, retentionDays: parsed.data.retentionDays } });
+  revalidatePath("/configuracion");
+  return { ok: true, message: "Ajuste de ubicacion actualizado." };
+}
+
+// --------------------------------------------------------------------------
+// Prompts IA: duplicar y restaurar version
+// --------------------------------------------------------------------------
+export async function duplicatePromptAction(_: ActionResult | null, formData: FormData): Promise<ActionResult> {
+  const user = await getCurrentUser();
+  if (!can(user, ["ai:admin", "write:config"])) {
+    return DENIED;
+  }
+  const promptId = String(formData.get("promptId") ?? "");
+  const db = getDb();
+  const [source] = await db.select().from(schema.aiPromptTemplates).where(eq(schema.aiPromptTemplates.id, promptId)).limit(1);
+  if (!source) {
+    return { ok: false, message: "Prompt no encontrado." };
+  }
+  const newKey = `${source.key}_copia`;
+  const [{ version }] = await db
+    .select({ version: sql<number>`coalesce(max(${schema.aiPromptTemplates.version}), 0)::int + 1` })
+    .from(schema.aiPromptTemplates)
+    .where(eq(schema.aiPromptTemplates.key, newKey));
+  await db.insert(schema.aiPromptTemplates).values({
+    key: newKey,
+    name: `${source.name} (copia)`,
+    description: source.description,
+    moduleScope: source.moduleScope,
+    systemPrompt: source.systemPrompt,
+    userPromptTemplate: source.userPromptTemplate,
+    variables: source.variables,
+    providerKey: source.providerKey,
+    model: source.model,
+    temperature: source.temperature,
+    enabled: false,
+    version,
+    updatedBy: user.id,
+  });
+  await writeAuditLog({ actorId: user.id, action: "ai.prompt_duplicate", entityType: "ai_prompt_template", entityId: promptId, after: { newKey } });
+  redirect("/asistente/prompts");
+}
+
+export async function restorePromptVersionAction(_: ActionResult | null, formData: FormData): Promise<ActionResult> {
+  const user = await getCurrentUser();
+  if (!can(user, ["ai:admin", "write:config"])) {
+    return DENIED;
+  }
+  const sourceId = String(formData.get("promptId") ?? "");
+  const db = getDb();
+  const [source] = await db.select().from(schema.aiPromptTemplates).where(eq(schema.aiPromptTemplates.id, sourceId)).limit(1);
+  if (!source) {
+    return { ok: false, message: "Version no encontrada." };
+  }
+  const [{ version }] = await db
+    .select({ version: sql<number>`coalesce(max(${schema.aiPromptTemplates.version}), 0)::int + 1` })
+    .from(schema.aiPromptTemplates)
+    .where(eq(schema.aiPromptTemplates.key, source.key));
+  await db.insert(schema.aiPromptTemplates).values({
+    key: source.key,
+    name: source.name,
+    description: source.description,
+    moduleScope: source.moduleScope,
+    systemPrompt: source.systemPrompt,
+    userPromptTemplate: source.userPromptTemplate,
+    variables: source.variables,
+    providerKey: source.providerKey,
+    model: source.model,
+    temperature: source.temperature,
+    enabled: source.enabled,
+    version,
+    updatedBy: user.id,
+  });
+  await writeAuditLog({ actorId: user.id, action: "ai.prompt_restore", entityType: "ai_prompt_template", entityId: source.key, after: { restoredFromVersion: source.version, newVersion: version } });
+  redirect("/asistente/prompts");
 }
 
 // --------------------------------------------------------------------------

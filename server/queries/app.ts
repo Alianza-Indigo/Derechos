@@ -151,7 +151,19 @@ export async function getMemberByCredentialSlug(slug: string) {
   return row ? dbMemberToDomain(row.member, row.credential) : undefined;
 }
 
-export async function listCases(query?: string) {
+export type CaseFilters = {
+  q?: string;
+  category?: string;
+  status?: string;
+  priority?: string;
+  territoryId?: string;
+  assignedTo?: string;
+  from?: string;
+  to?: string;
+};
+
+export async function listCases(filters?: string | CaseFilters) {
+  const f: CaseFilters = typeof filters === "string" ? { q: filters } : filters ?? {};
   const db = getDb();
   const user = await getCurrentUser();
   const sensitive = canViewSensitive(user);
@@ -159,8 +171,15 @@ export async function listCases(query?: string) {
   const domain = rows
     .map((record) => dbCaseToDomain(record))
     .filter((record) => canAccessCase(user, record))
+    .filter((record) => (f.category ? record.category === f.category : true))
+    .filter((record) => (f.status ? record.status === f.status : true))
+    .filter((record) => (f.priority ? record.priority === f.priority : true))
+    .filter((record) => (f.territoryId ? record.territoryId === f.territoryId : true))
+    .filter((record) => (f.assignedTo ? record.assignedTo === f.assignedTo : true))
+    .filter((record) => (f.from ? record.openedAt >= f.from : true))
+    .filter((record) => (f.to ? record.openedAt <= `${f.to}T23:59:59.999Z` : true))
     .map((record) => redactCase(record, sensitive));
-  return filterText(domain, query, (record) => [record.caseNumber, record.title, record.category, record.status, record.priority]);
+  return filterText(domain, f.q, (record) => [record.caseNumber, record.title, record.category, record.status, record.priority]);
 }
 
 export async function getCaseById(id: string) {

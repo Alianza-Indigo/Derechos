@@ -17,15 +17,48 @@ export function toXlsxBuffer(sheetName: string, rows: Array<Record<string, unkno
   return XLSX.write(workbook, { type: "buffer", bookType: "xlsx" }) as Buffer;
 }
 
-export function buildInstitutionalPdf(title: string, rows: Array<Record<string, unknown>>) {
+type PdfMeta = {
+  orgName?: string;
+  generatedBy?: string;
+  filters?: string;
+};
+
+export function buildInstitutionalPdf(title: string, rows: Array<Record<string, unknown>>, meta: PdfMeta = {}) {
   const doc = new jsPDF();
-  doc.setFontSize(16);
-  doc.text(title, 14, 18);
-  doc.setFontSize(10);
-  doc.text(`Generado: ${new Date().toLocaleString("es-MX")}`, 14, 27);
-  doc.text("Filtros aplicados: segun seleccion de usuario autorizado", 14, 34);
-  rows.slice(0, 24).forEach((row, index) => {
-    doc.text(Object.entries(row).map(([key, value]) => `${key}: ${value}`).join(" | ").slice(0, 110), 14, 46 + index * 7);
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const maxWidth = doc.internal.pageSize.getWidth() - 28;
+  const lineHeight = 7;
+  const bottomMargin = 16;
+
+  const header = () => {
+    if (meta.orgName) {
+      doc.setFontSize(11);
+      doc.text(meta.orgName, 14, 14);
+    }
+    doc.setFontSize(16);
+    doc.text(title, 14, 24);
+    doc.setFontSize(10);
+    doc.text(`Generado: ${new Date().toLocaleString("es-MX")}`, 14, 32);
+    doc.text(`Generado por: ${meta.generatedBy ?? "Usuario autorizado"}`, 14, 38);
+    doc.text(`Filtros: ${meta.filters ?? "seleccion de usuario autorizado"}`, 14, 44);
+  };
+
+  header();
+  let y = 54;
+  rows.forEach((row) => {
+    const text = Object.entries(row).map(([key, value]) => `${key}: ${value ?? ""}`).join(" | ");
+    const lines = doc.splitTextToSize(text, maxWidth) as string[];
+    for (const line of lines) {
+      if (y > pageHeight - bottomMargin) {
+        doc.addPage();
+        header();
+        y = 54;
+      }
+      doc.text(line, 14, y);
+      y += lineHeight;
+    }
+    y += 1;
   });
+
   return Buffer.from(doc.output("arraybuffer"));
 }

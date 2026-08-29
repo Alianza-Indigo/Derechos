@@ -1,13 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
 import { buildInstitutionalPdf, toCsv, toXlsxBuffer } from "@/lib/exports";
 import { clientKey, rateLimit } from "@/lib/rate-limit";
-import { getPrevalenceData, listCases, listEvents, listMembers } from "@/server/queries/app";
+import { hasAnyPermission } from "@/server/permissions/rbac";
+import { getConfiguration, getCurrentUser, getPrevalenceData, listCases, listEvents, listMembers } from "@/server/queries/app";
 
 export async function GET(request: NextRequest, { params }: { params: Promise<{ type: string }> }) {
   const limit = await rateLimit(clientKey(request, "export"), 40, 60);
   if (!limit.allowed) {
     return NextResponse.json({ error: "Limite de exportaciones alcanzado." }, { status: 429 });
   }
+  const user = await getCurrentUser();
+  if (!hasAnyPermission(user, ["reports:export", "*"])) {
+    return NextResponse.json({ error: "No autorizado para exportar." }, { status: 403 });
+  }
+
   const { type } = await params;
   const format = request.nextUrl.searchParams.get("format") ?? "csv";
   const rows = await getRows(type);
@@ -22,7 +28,13 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   }
 
   if (format === "pdf") {
-    return new NextResponse(new Uint8Array(buildInstitutionalPdf(`Reporte ${type}`, rows)), {
+    const { organization } = await getConfiguration();
+    const buffer = buildInstitutionalPdf(`Reporte ${type}`, rows, {
+      orgName: organization.name,
+      generatedBy: user.name,
+      filters: request.nextUrl.searchParams.toString() || "sin filtros",
+    });
+    return new NextResponse(new Uint8Array(buffer), {
       headers: {
         "content-type": "application/pdf",
         "content-disposition": `attachment; filename="${type}.pdf"`,

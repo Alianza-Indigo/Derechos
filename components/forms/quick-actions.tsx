@@ -3,8 +3,62 @@
 import { type FormEvent, useActionState, useState } from "react";
 import { Button } from "@/components/ui/button";
 import type { caseStatuses } from "@/lib/constants";
-import { addEvidenceAction, createPrevalenceRecordAction, updateCaseStatusAction, updateProviderConfigAction } from "@/server/actions/platform";
+import { addEvidenceAction, createPrevalenceRecordAction, duplicatePromptAction, restorePromptVersionAction, updateCaseStatusAction, updateProviderConfigAction } from "@/server/actions/platform";
 import type { AiProviderConfig, PrevalenceMetric, PrevalenceStudy, Territory } from "@/lib/types";
+
+export function ProviderTester({ providerKey }: { providerKey: "gemini" | "openai" | "anthropic" }) {
+  const [status, setStatus] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  async function test() {
+    setLoading(true);
+    setStatus(null);
+    try {
+      const response = await fetch("/api/ai/test", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ providerKey, message: "Prueba de conexion." }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        setStatus(data.error ?? "Error");
+      } else {
+        setStatus(`${data.status} (${data.provider}/${data.model})`);
+      }
+    } catch {
+      setStatus("Error de red");
+    } finally {
+      setLoading(false);
+    }
+  }
+  return (
+    <span className="flex items-center gap-2">
+      <Button type="button" className="h-9 px-3 text-xs" disabled={loading} onClick={test}>{loading ? "Probando..." : "Probar"}</Button>
+      {status ? <span className="text-xs text-slate-600">{status}</span> : null}
+    </span>
+  );
+}
+
+export function DuplicatePromptButton({ promptId }: { promptId: string }) {
+  const [state, action, pending] = useActionState(duplicatePromptAction, null);
+  return (
+    <form action={action}>
+      <input type="hidden" name="promptId" value={promptId} />
+      <Button type="submit" className="h-8 px-2 text-xs" disabled={pending}>{pending ? "..." : "Duplicar"}</Button>
+      {state?.message ? <span className="ml-2 text-xs text-rose-700">{state.message}</span> : null}
+    </form>
+  );
+}
+
+export function RestorePromptButton({ promptId }: { promptId: string }) {
+  const [state, action, pending] = useActionState(restorePromptVersionAction, null);
+  return (
+    <form action={action}>
+      <input type="hidden" name="promptId" value={promptId} />
+      <Button type="submit" className="h-8 px-3 text-xs" disabled={pending}>{pending ? "..." : "Restaurar esta version"}</Button>
+      {state?.message ? <span className="ml-2 text-xs text-rose-700">{state.message}</span> : null}
+    </form>
+  );
+}
 
 export function CaseStatusForm({ caseId, statuses }: { caseId: string; statuses: typeof caseStatuses }) {
   const [state, formAction, pending] = useActionState(updateCaseStatusAction, null);

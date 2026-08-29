@@ -9,7 +9,22 @@ import { formatDate } from "@/lib/utils";
 export default async function PrevalencePage() {
   const data = await getPrevalenceData();
   const territories = await getTerritories();
-  const cityRecords = data.byTerritory.filter((item) => item.territory.type === "city");
+  const cityRanking = data.byTerritory
+    .filter((item) => item.territory.type === "city")
+    .sort((a, b) => b.value - a.value)
+    .map((item) => ({ name: item.territory.name, value: Math.round(item.value) }));
+  const territoryComparison = data.byTerritory
+    .filter((item) => item.value > 0)
+    .map((item) => ({ name: item.territory.name, value: Math.round(item.value) }));
+  const timeSeries = Array.from(
+    data.records.reduce((map, record) => {
+      const month = record.measuredAt.slice(0, 7);
+      map.set(month, (map.get(month) ?? 0) + Number(record.valueNumeric ?? 0));
+      return map;
+    }, new Map<string, number>()),
+  )
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([name, value]) => ({ name, value: Math.round(value) }));
   return (
     <div className="space-y-6">
       <section className="grid gap-4 md:grid-cols-4">
@@ -25,13 +40,19 @@ export default async function PrevalencePage() {
         </Card>
         <Card>
           <CardHeader title="Ranking de ciudades" action={<LinkButton href="/prevalencia/captura">Capturar dato</LinkButton>} />
-          <BarSummary data={cityRecords.map((item) => ({ name: item.territory.name, value: Math.round(item.value / 100) }))} />
+          <BarSummary data={cityRanking} />
         </Card>
       </section>
-      <Card>
-        <CardHeader title="Serie por indicador" description="Lectura de registros por territorio, fuente, muestra y fecha." action={<LinkButton href="/prevalencia/estudios" variant="secondary">Ver estudios</LinkButton>} />
-        <LineSummary data={data.metrics.slice(0, 8).map((metric, index) => ({ name: metric.label.slice(0, 18), value: Number(data.records[index]?.valueNumeric ?? 0) }))} />
-      </Card>
+      <section className="grid gap-6 xl:grid-cols-2">
+        <Card>
+          <CardHeader title="Comparativo entre territorios" description="Suma de indicadores medidos por territorio." action={<LinkButton href="/prevalencia/estudios" variant="secondary">Ver estudios</LinkButton>} />
+          <BarSummary data={territoryComparison} />
+        </Card>
+        <Card>
+          <CardHeader title="Serie temporal" description="Valores agregados por mes de medicion." />
+          <LineSummary data={timeSeries} />
+        </Card>
+      </section>
       <Card>
         <CardHeader title="Registros de prevalencia" />
         <DataTable headers={["Indicador", "Territorio", "Valor", "Muestra", "Fuente", "Fecha"]}>
