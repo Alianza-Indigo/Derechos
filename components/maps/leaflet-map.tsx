@@ -28,6 +28,10 @@ export function LeafletMap({
       if (!target || target.dataset.ready) return;
       target.dataset.ready = "true";
       map = L.map(target, { scrollWheelZoom: false }).setView([28.9, -106.2], 6);
+      // La rueda hace zoom solo cuando el cursor esta sobre el mapa; al salir,
+      // el scroll vuelve a mover la pagina (no se queda atrapado en el mapa).
+      map.on("mouseover", () => map?.scrollWheelZoom.enable());
+      map.on("mouseout", () => map?.scrollWheelZoom.disable());
       L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
         attribution: "OpenStreetMap",
       }).addTo(map);
