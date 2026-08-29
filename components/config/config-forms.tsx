@@ -2,8 +2,10 @@
 
 import { useActionState } from "react";
 import { Button } from "@/components/ui/button";
-import { updateLocationSettingAction, updateOrganizationAction } from "@/server/actions/platform";
+import { updateLocationSettingAction, updateOrganizationAction, updateTerritoryLocationSettingAction } from "@/server/actions/platform";
 import type { LocationTrackingSetting } from "@/lib/types";
+
+type TerritorySetting = { territoryId: string; name: string; type: string; enabled: boolean; mode: string; retentionDays: number };
 
 type Organization = {
   name: string;
@@ -72,4 +74,29 @@ function SettingRow({ setting, label }: { setting: LocationTrackingSetting; labe
 
 export function LocationSettingsEditor({ settings, labels }: { settings: LocationTrackingSetting[]; labels: Record<string, string> }) {
   return <div>{settings.map((setting) => <SettingRow key={setting.id} setting={setting} label={labels[setting.userId] ?? "Usuario"} />)}</div>;
+}
+
+function TerritoryRow({ setting }: { setting: TerritorySetting }) {
+  const [state, action, pending] = useActionState(updateTerritoryLocationSettingAction, null);
+  return (
+    <form action={action} className="flex flex-wrap items-end gap-3 border-b border-slate-100 py-3">
+      <input type="hidden" name="territoryId" value={setting.territoryId} />
+      <div className="min-w-40"><p className="text-sm font-medium text-slate-700">{setting.name}</p><span className="text-xs text-slate-500">{setting.type}</span><Msg state={state} /></div>
+      <label className="text-sm"><span className="mr-2">Estado</span>
+        <select name="enabled" defaultValue={String(setting.enabled)} className="h-9 rounded-md border border-slate-300 px-2 text-sm">
+          <option value="true">Habilitada</option><option value="false">Deshabilitada</option>
+        </select></label>
+      <label className="text-sm"><span className="mr-2">Modo</span>
+        <select name="mode" defaultValue={setting.mode} className="h-9 rounded-md border border-slate-300 px-2 text-sm">
+          {MODES.map((m) => <option key={m} value={m}>{m}</option>)}
+        </select></label>
+      <label className="text-sm"><span className="mr-2">Retencion (dias)</span>
+        <input name="retentionDays" type="number" min={1} max={365} defaultValue={setting.retentionDays} className="h-9 w-24 rounded-md border border-slate-300 px-2 text-sm" /></label>
+      <Button type="submit" disabled={pending}>{pending ? "..." : "Guardar"}</Button>
+    </form>
+  );
+}
+
+export function TerritoryLocationEditor({ settings }: { settings: TerritorySetting[] }) {
+  return <div>{settings.map((setting) => <TerritoryRow key={setting.territoryId} setting={setting} />)}</div>;
 }

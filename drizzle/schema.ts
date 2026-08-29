@@ -209,6 +209,7 @@ export const events = pgTable("events", {
   dateStart: timestamp("date_start", { withTimezone: true }).notNull(),
   dateEnd: timestamp("date_end", { withTimezone: true }).notNull(),
   location: text("location").notNull(),
+  objective: text("objective"),
   territoryId: uuid("territory_id").references(() => territories.id).notNull(),
   organizerId: uuid("organizer_id").references(() => users.id).notNull(),
   attendeesCount: integer("attendees_count").default(0).notNull(),

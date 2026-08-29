@@ -9,7 +9,9 @@ import { normalizeSearch } from "@/lib/utils";
 import {
   aiRunSchema,
   caseFormSchema,
+  casePersonSchema,
   caseStatusUpdateSchema,
+  caseTimelineActionSchema,
   checkInSchema,
   commissionFormSchema,
   evidenceFormSchema,
@@ -17,8 +19,11 @@ import {
   locationPauseSchema,
   locationSettingSchema,
   memberFormSchema,
+  metricSchema,
   organizationSchema,
   prevalenceRecordSchema,
+  studySchema,
+  territoryLocationSchema,
   providerConfigSchema,
   promptTemplateSchema,
 } from "@/lib/validators";
@@ -237,6 +242,68 @@ export async function addEvidenceAction(_: ActionResult | null, formData: FormDa
   return { ok: true, message: "Evidencia de evento registrada." };
 }
 
+async function assertCaseAccess(userId: string, canTerritory: (t: string) => boolean, caseId: string) {
+  const db = getDb();
+  const [record] = await db.select().from(schema.cases).where(eq(schema.cases.id, caseId)).limit(1);
+  if (!record) {
+    return null;
+  }
+  return canTerritory(record.territoryId) || record.assignedTo === userId || record.openedBy === userId ? record : null;
+}
+
+export async function addCasePersonAction(_: ActionResult | null, formData: FormData): Promise<ActionResult> {
+  const user = await getCurrentUser();
+  if (!can(user, ["write:case", "write:territory"])) {
+    return DENIED;
+  }
+  const parsed = casePersonSchema.safeParse(Object.fromEntries(formData));
+  if (!parsed.success) {
+    return { ok: false, message: parsed.error.issues[0]?.message ?? "Datos invalidos." };
+  }
+  const record = await assertCaseAccess(user.id, (t) => canAccessTerritory(user, t), parsed.data.caseId);
+  if (!record) {
+    return { ok: false, message: "Caso no encontrado o sin acceso." };
+  }
+  const db = getDb();
+  await db.insert(schema.casePeople).values({
+    caseId: parsed.data.caseId,
+    personType: parsed.data.personType,
+    name: parsed.data.name,
+    contact: parsed.data.contact,
+    demographicData: {},
+    consentStatus: parsed.data.consentStatus,
+  });
+  await writeAuditLog({ actorId: user.id, action: "case.person_add", entityType: "case", entityId: parsed.data.caseId, after: { personType: parsed.data.personType, consentStatus: parsed.data.consentStatus } });
+  revalidatePath(`/casos/${parsed.data.caseId}`);
+  return { ok: true, message: "Persona agregada al expediente." };
+}
+
+export async function addCaseActionAction(_: ActionResult | null, formData: FormData): Promise<ActionResult> {
+  const user = await getCurrentUser();
+  if (!can(user, ["write:case", "write:territory"])) {
+    return DENIED;
+  }
+  const parsed = caseTimelineActionSchema.safeParse(Object.fromEntries(formData));
+  if (!parsed.success) {
+    return { ok: false, message: parsed.error.issues[0]?.message ?? "Datos invalidos." };
+  }
+  const record = await assertCaseAccess(user.id, (t) => canAccessTerritory(user, t), parsed.data.caseId);
+  if (!record) {
+    return { ok: false, message: "Caso no encontrado o sin acceso." };
+  }
+  const db = getDb();
+  await db.insert(schema.caseActions).values({
+    caseId: parsed.data.caseId,
+    actionType: parsed.data.actionType,
+    description: parsed.data.description,
+    dueDate: parsed.data.dueDate ? new Date(parsed.data.dueDate) : null,
+    createdBy: user.id,
+  });
+  await writeAuditLog({ actorId: user.id, action: "case.action_add", entityType: "case", entityId: parsed.data.caseId, after: { actionType: parsed.data.actionType } });
+  revalidatePath(`/casos/${parsed.data.caseId}`);
+  return { ok: true, message: "Accion agregada al timeline." };
+}
+
 // --------------------------------------------------------------------------
 // Eventos
 // --------------------------------------------------------------------------
@@ -260,12 +327,13 @@ export async function createEventAction(_: ActionResult | null, formData: FormDa
     dateStart: new Date(parsed.data.dateStart),
     dateEnd: new Date(parsed.data.dateEnd),
     location: parsed.data.location,
+    objective: parsed.data.objective || null,
     territoryId: parsed.data.territoryId,
     organizerId: user.id,
     attendeesCount: parsed.data.attendeesCount,
-    institutions: [],
+    institutions: parsed.data.institutions,
     impactSummary: parsed.data.impactSummary,
-    indicators: ["Personas atendidas"],
+    indicators: parsed.data.indicators.length ? parsed.data.indicators : ["Personas atendidas"],
   });
   await writeAuditLog({ actorId: user.id, action: "event.create", entityType: "event", entityId: id, after: parsed.data });
   redirect(`/eventos/${id}`);
@@ -551,6 +619,51 @@ export async function createPrevalenceRecordAction(_: ActionResult | null, formD
   return { ok: true, message: "Medicion guardada." };
 }
 
+export async function createStudyAction(_: ActionResult | null, formData: FormData): Promise<ActionResult> {
+  const user = await getCurrentUser();
+  if (!can(user, ["write:territory", "write:config"])) {
+    return DENIED;
+  }
+  const parsed = studySchema.safeParse(Object.fromEntries(formData));
+  if (!parsed.success) {
+    return { ok: false, message: parsed.error.issues[0]?.message ?? "Datos invalidos." };
+  }
+  const db = getDb();
+  const [inserted] = await db.insert(schema.prevalenceStudies).values({
+    name: parsed.data.name,
+    description: parsed.data.description,
+    methodology: parsed.data.methodology,
+    startDate: new Date(parsed.data.startDate),
+    endDate: new Date(parsed.data.endDate),
+    status: parsed.data.status,
+  }).returning({ id: schema.prevalenceStudies.id });
+  await writeAuditLog({ actorId: user.id, action: "prevalence.study_create", entityType: "prevalence_study", entityId: inserted.id, after: parsed.data });
+  revalidatePath("/prevalencia/estudios");
+  return { ok: true, message: "Estudio creado." };
+}
+
+export async function createMetricAction(_: ActionResult | null, formData: FormData): Promise<ActionResult> {
+  const user = await getCurrentUser();
+  if (!can(user, ["write:territory", "write:config"])) {
+    return DENIED;
+  }
+  const parsed = metricSchema.safeParse(Object.fromEntries(formData));
+  if (!parsed.success) {
+    return { ok: false, message: parsed.error.issues[0]?.message ?? "Datos invalidos." };
+  }
+  const db = getDb();
+  const [inserted] = await db.insert(schema.prevalenceMetrics).values({
+    studyId: parsed.data.studyId,
+    indicatorKey: parsed.data.indicatorKey,
+    label: parsed.data.label,
+    description: parsed.data.description,
+    valueType: parsed.data.valueType,
+  }).returning({ id: schema.prevalenceMetrics.id });
+  await writeAuditLog({ actorId: user.id, action: "prevalence.metric_create", entityType: "prevalence_metric", entityId: inserted.id, after: parsed.data });
+  revalidatePath("/prevalencia/estudios");
+  return { ok: true, message: "Indicador creado." };
+}
+
 // --------------------------------------------------------------------------
 // Retencion de ubicacion (cron; autenticado por CRON_SECRET en la ruta)
 // --------------------------------------------------------------------------
@@ -620,6 +733,34 @@ export async function updateLocationSettingAction(_: ActionResult | null, formDa
   await writeAuditLog({ actorId: user.id, action: "location_setting.update", entityType: "location_tracking_setting", entityId: parsed.data.id, after: { enabled: parsed.data.enabled, mode: parsed.data.mode, retentionDays: parsed.data.retentionDays } });
   revalidatePath("/configuracion");
   return { ok: true, message: "Ajuste de ubicacion actualizado." };
+}
+
+export async function updateTerritoryLocationSettingAction(_: ActionResult | null, formData: FormData): Promise<ActionResult> {
+  const user = await getCurrentUser();
+  if (!can(user, ["write:config"])) {
+    return DENIED;
+  }
+  const parsed = territoryLocationSchema.safeParse(Object.fromEntries(formData));
+  if (!parsed.success) {
+    return { ok: false, message: parsed.error.issues[0]?.message ?? "Datos invalidos." };
+  }
+  const db = getDb();
+  const [existing] = await db.select({ id: schema.territoryLocationSettings.id }).from(schema.territoryLocationSettings).where(eq(schema.territoryLocationSettings.territoryId, parsed.data.territoryId)).limit(1);
+  const values = {
+    enabled: parsed.data.enabled,
+    mode: parsed.data.mode,
+    retentionDays: parsed.data.retentionDays,
+    updatedBy: user.id,
+    updatedAt: new Date(),
+  };
+  if (existing) {
+    await db.update(schema.territoryLocationSettings).set(values).where(eq(schema.territoryLocationSettings.id, existing.id));
+  } else {
+    await db.insert(schema.territoryLocationSettings).values({ territoryId: parsed.data.territoryId, ...values });
+  }
+  await writeAuditLog({ actorId: user.id, action: "territory_location_setting.update", entityType: "territory_location_setting", entityId: parsed.data.territoryId, after: values });
+  revalidatePath("/configuracion");
+  return { ok: true, message: "Configuracion territorial de ubicacion actualizada." };
 }
 
 // --------------------------------------------------------------------------

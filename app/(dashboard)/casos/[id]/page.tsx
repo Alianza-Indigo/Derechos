@@ -3,15 +3,18 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardHeader } from "@/components/ui/card";
 import { DataTable } from "@/components/ui/table";
 import { LinkButton } from "@/components/ui/button";
-import { CaseStatusForm, EvidenceForm } from "@/components/forms/quick-actions";
+import { CaseActionForm, CasePersonForm, CaseStatusForm, EvidenceForm } from "@/components/forms/quick-actions";
 import { caseStatuses } from "@/lib/constants";
 import { formatDate } from "@/lib/utils";
-import { getCaseById, getTerritoryName, getUserName } from "@/server/queries/app";
+import { getCaseById, getCurrentUser, getTerritoryName, getUserName } from "@/server/queries/app";
+import { hasAnyPermission } from "@/server/permissions/rbac";
 
 export default async function CaseDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const record = await getCaseById(id);
   if (!record) notFound();
+  const user = await getCurrentUser();
+  const canWrite = hasAnyPermission(user, ["write:case", "write:territory", "*"]);
   return (
     <div className="space-y-6">
       <Card>
@@ -43,6 +46,7 @@ export default async function CaseDetailPage({ params }: { params: Promise<{ id:
               </tr>
             ))}
           </DataTable>
+          {canWrite ? <div className="mt-4 border-t border-slate-100 pt-4"><CasePersonForm caseId={record.id} /></div> : null}
         </Card>
         <Card>
           <CardHeader title="Timeline de acciones" />
@@ -56,6 +60,7 @@ export default async function CaseDetailPage({ params }: { params: Promise<{ id:
               </tr>
             ))}
           </DataTable>
+          {canWrite ? <div className="mt-4 border-t border-slate-100 pt-4"><CaseActionForm caseId={record.id} /></div> : null}
         </Card>
       </section>
       <Card>

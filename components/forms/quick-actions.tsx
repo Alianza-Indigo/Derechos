@@ -3,8 +3,45 @@
 import { type FormEvent, useActionState, useState } from "react";
 import { Button } from "@/components/ui/button";
 import type { caseStatuses } from "@/lib/constants";
-import { addEvidenceAction, createPrevalenceRecordAction, duplicatePromptAction, restorePromptVersionAction, updateCaseStatusAction, updateProviderConfigAction } from "@/server/actions/platform";
+import { addCaseActionAction, addCasePersonAction, addEvidenceAction, createPrevalenceRecordAction, duplicatePromptAction, restorePromptVersionAction, updateCaseStatusAction, updateProviderConfigAction } from "@/server/actions/platform";
 import type { AiProviderConfig, PrevalenceMetric, PrevalenceStudy, Territory } from "@/lib/types";
+
+export function CasePersonForm({ caseId }: { caseId: string }) {
+  const [state, action, pending] = useActionState(addCasePersonAction, null);
+  return (
+    <form action={action} className="grid gap-2 md:grid-cols-2">
+      <input type="hidden" name="caseId" value={caseId} />
+      <select name="personType" className="h-9 rounded-md border border-slate-300 px-2 text-sm">
+        {["victima", "solicitante", "autoridad", "testigo", "otro"].map((t) => <option key={t} value={t}>{t}</option>)}
+      </select>
+      <select name="consentStatus" className="h-9 rounded-md border border-slate-300 px-2 text-sm">
+        {["documentado", "pendiente", "no_aplica"].map((t) => <option key={t} value={t}>{t}</option>)}
+      </select>
+      <input name="name" placeholder="Nombre" required className="h-9 rounded-md border border-slate-300 px-2 text-sm" />
+      <input name="contact" placeholder="Contacto (o Reservado)" required className="h-9 rounded-md border border-slate-300 px-2 text-sm" />
+      <div className="md:col-span-2 flex items-center gap-2">
+        <Button type="submit" disabled={pending}>{pending ? "..." : "Agregar persona"}</Button>
+        {state?.message ? <span className={state.ok ? "text-xs text-emerald-700" : "text-xs text-rose-700"}>{state.message}</span> : null}
+      </div>
+    </form>
+  );
+}
+
+export function CaseActionForm({ caseId }: { caseId: string }) {
+  const [state, action, pending] = useActionState(addCaseActionAction, null);
+  return (
+    <form action={action} className="grid gap-2 md:grid-cols-2">
+      <input type="hidden" name="caseId" value={caseId} />
+      <input name="actionType" placeholder="Tipo de accion" required className="h-9 rounded-md border border-slate-300 px-2 text-sm" />
+      <input name="dueDate" type="date" className="h-9 rounded-md border border-slate-300 px-2 text-sm" />
+      <textarea name="description" placeholder="Descripcion" required className="md:col-span-2 min-h-16 rounded-md border border-slate-300 px-2 py-1 text-sm" />
+      <div className="md:col-span-2 flex items-center gap-2">
+        <Button type="submit" disabled={pending}>{pending ? "..." : "Agregar accion"}</Button>
+        {state?.message ? <span className={state.ok ? "text-xs text-emerald-700" : "text-xs text-rose-700"}>{state.message}</span> : null}
+      </div>
+    </form>
+  );
+}
 
 export function ProviderTester({ providerKey }: { providerKey: "gemini" | "openai" | "anthropic" }) {
   const [status, setStatus] = useState<string | null>(null);

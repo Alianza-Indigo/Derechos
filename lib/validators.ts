@@ -36,6 +36,21 @@ export const caseStatusUpdateSchema = z.object({
   reason: z.string().min(10, "El motivo del cambio de estado es obligatorio."),
 });
 
+export const casePersonSchema = z.object({
+  caseId: z.string().min(1),
+  personType: z.enum(["victima", "solicitante", "autoridad", "testigo", "otro"]),
+  name: z.string().min(2, "Captura el nombre."),
+  contact: z.string().min(1, "Captura un contacto o 'Reservado'."),
+  consentStatus: z.enum(["documentado", "pendiente", "no_aplica"]),
+});
+
+export const caseTimelineActionSchema = z.object({
+  caseId: z.string().min(1),
+  actionType: z.string().min(3, "Describe el tipo de accion."),
+  description: z.string().min(5, "Describe la accion."),
+  dueDate: z.string().optional(),
+});
+
 export const evidenceFormSchema = z.object({
   entityType: z.enum(["case", "event"]),
   entityId: z.string().min(1),
@@ -77,6 +92,30 @@ export const locationPauseSchema = z.object({
   reason: z.string().optional(),
 });
 
+export const territoryLocationSchema = z.object({
+  territoryId: z.string().min(1),
+  enabled: formBoolean,
+  mode: z.enum(["disabled", "manual_check_in", "during_commission", "active_shift"]),
+  retentionDays: z.coerce.number().int().min(1).max(365),
+});
+
+export const studySchema = z.object({
+  name: z.string().min(3, "Captura el nombre del estudio."),
+  description: z.string().min(5, "Captura una descripcion."),
+  methodology: z.string().min(5, "Captura la metodologia."),
+  startDate: z.string().min(1, "Captura la fecha de inicio."),
+  endDate: z.string().min(1, "Captura la fecha de fin."),
+  status: z.enum(["borrador", "activo", "cerrado"]),
+});
+
+export const metricSchema = z.object({
+  studyId: z.string().min(1, "Selecciona el estudio."),
+  indicatorKey: z.string().regex(/^[a-z0-9_]+$/, "Usa minusculas, numeros y guion bajo."),
+  label: z.string().min(3, "Captura la etiqueta."),
+  description: z.string().min(3, "Captura la descripcion."),
+  valueType: z.enum(["numerico", "tasa", "conteo", "porcentaje", "texto"]),
+});
+
 export const providerConfigSchema = z.object({
   providerKey: z.enum(["gemini", "openai", "anthropic"]),
   enabled: formBoolean,
@@ -85,6 +124,11 @@ export const providerConfigSchema = z.object({
   apiKey: z.string().optional(),
 });
 
+const csvList = z
+  .string()
+  .optional()
+  .transform((value) => (value ? value.split(",").map((item) => item.trim()).filter(Boolean) : []));
+
 export const eventFormSchema = z.object({
   title: z.string().min(5),
   description: z.string().min(20),
@@ -92,9 +136,12 @@ export const eventFormSchema = z.object({
   dateStart: z.string().min(1),
   dateEnd: z.string().min(1),
   location: z.string().min(3),
+  objective: z.string().optional(),
   territoryId: z.string().min(1),
   attendeesCount: z.coerce.number().int().nonnegative(),
   impactSummary: z.string().min(10),
+  institutions: csvList,
+  indicators: csvList,
 });
 
 export const commissionFormSchema = z.object({

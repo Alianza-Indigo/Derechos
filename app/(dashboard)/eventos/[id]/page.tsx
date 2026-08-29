@@ -29,6 +29,7 @@ export default async function EventDetailPage({ params }: { params: Promise<{ id
           <EvidenceForm entityId={event.id} entityType="event" />
         </div>
         <DataTable headers={["Seccion", "Contenido"]}>
+          <tr><td className="px-4 py-3 font-medium">Objetivo</td><td className="px-4 py-3">{event.objective ?? "No especificado"}</td></tr>
           <tr><td className="px-4 py-3 font-medium">Impacto</td><td className="px-4 py-3">{event.impactSummary}</td></tr>
           <tr><td className="px-4 py-3 font-medium">Instituciones</td><td className="px-4 py-3">{event.institutions.join(", ")}</td></tr>
           <tr><td className="px-4 py-3 font-medium">Indicadores</td><td className="px-4 py-3">{event.indicators.join(", ")}</td></tr>

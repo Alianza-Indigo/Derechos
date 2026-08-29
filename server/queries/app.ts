@@ -328,12 +328,16 @@ export async function getCommissionById(id: string) {
 export async function getAssistantData() {
   await warmReference();
   const db = getDb();
-  const [providerRows, promptRows, conversationRows, messageRows] = await Promise.all([
+  const user = await getCurrentUser();
+  const canOversee = hasAnyPermission(user, ["*", "read:national", "ai:admin"]);
+  const [providerRows, promptRows, allConversationRows, messageRows] = await Promise.all([
     db.select().from(schema.aiProviderConfigs),
     db.select().from(schema.aiPromptTemplates).orderBy(desc(schema.aiPromptTemplates.updatedAt)),
     db.select().from(schema.aiConversations).orderBy(desc(schema.aiConversations.createdAt)),
     db.select().from(schema.aiMessages).orderBy(desc(schema.aiMessages.createdAt)),
   ]);
+  // El historial IA se limita al propio usuario salvo roles de supervision.
+  const conversationRows = canOversee ? allConversationRows : allConversationRows.filter((conversation) => conversation.userId === user.id);
   return {
     providerConfigs: providerRows.map(dbProviderToDomain),
     prompts: promptRows.map(dbPromptToDomain),
@@ -449,11 +453,24 @@ export async function getAuditLogs() {
 export async function getConfiguration() {
   await warmReference();
   const db = getDb();
-  const [orgRows, providerRows, settingRows] = await Promise.all([
+  const [orgRows, providerRows, settingRows, territoryRows, territorySettingRows] = await Promise.all([
     db.select().from(schema.organizations).limit(1),
     db.select().from(schema.aiProviderConfigs).orderBy(schema.aiProviderConfigs.priority),
     db.select().from(schema.locationTrackingSettings),
+    db.select().from(schema.territories),
+    db.select().from(schema.territoryLocationSettings),
   ]);
+  const territorySettings = territoryRows.map((territory) => {
+    const setting = territorySettingRows.find((row) => row.territoryId === territory.id);
+    return {
+      territoryId: territory.id,
+      name: territory.name,
+      type: territory.type,
+      enabled: setting?.enabled ?? false,
+      mode: setting?.mode ?? "manual_check_in",
+      retentionDays: setting?.retentionDays ?? 30,
+    };
+  });
   return {
     organization: orgRows[0]
       ? {
@@ -480,6 +497,7 @@ export async function getConfiguration() {
       updatedBy: setting.updatedBy,
       updatedAt: setting.updatedAt.toISOString(),
     })),
+    territorySettings,
   };
 }
 
@@ -594,6 +612,7 @@ function dbEventToDomain(event: typeof schema.events.$inferSelect, evidence: Arr
     dateStart: event.dateStart.toISOString(),
     dateEnd: event.dateEnd.toISOString(),
     location: event.location,
+    objective: event.objective ?? undefined,
     territoryId: event.territoryId,
     organizerId: event.organizerId,
     attendeesCount: event.attendeesCount,

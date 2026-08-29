@@ -108,6 +108,7 @@ export type EventRecord = {
   dateStart: string;
   dateEnd: string;
   location: string;
+  objective?: string;
   territoryId: string;
   organizerId: string;
   attendeesCount: number;

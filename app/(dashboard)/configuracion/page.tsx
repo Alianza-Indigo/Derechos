@@ -1,7 +1,7 @@
 import { Card, CardHeader } from "@/components/ui/card";
 import { DataTable } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { LocationSettingsEditor, OrganizationForm } from "@/components/config/config-forms";
+import { LocationSettingsEditor, OrganizationForm, TerritoryLocationEditor } from "@/components/config/config-forms";
 import { getConfiguration, getCurrentUser, getUserName, getUsers } from "@/server/queries/app";
 import { hasAnyPermission } from "@/server/permissions/rbac";
 
@@ -43,6 +43,23 @@ export default async function ConfigurationPage() {
                 <td className="px-4 py-3">{setting.allowedHours.from} - {setting.allowedHours.to}</td>
                 <td className="px-4 py-3">{setting.retentionDays} dias</td>
                 <td className="px-4 py-3">{getUserName(setting.updatedBy)}</td>
+              </tr>
+            ))}
+          </DataTable>
+        )}
+      </Card>
+      <Card>
+        <CardHeader title="Geolocalizacion por territorio" description="Habilita, define modo y retencion de ubicacion por pais, estado o ciudad." />
+        {canConfig ? (
+          <TerritoryLocationEditor settings={data.territorySettings} />
+        ) : (
+          <DataTable headers={["Territorio", "Estado", "Modo", "Retencion"]}>
+            {data.territorySettings.map((setting) => (
+              <tr key={setting.territoryId}>
+                <td className="px-4 py-3">{setting.name}</td>
+                <td className="px-4 py-3"><Badge tone={setting.enabled ? "green" : "slate"}>{setting.enabled ? "habilitada" : "deshabilitada"}</Badge></td>
+                <td className="px-4 py-3">{setting.mode}</td>
+                <td className="px-4 py-3">{setting.retentionDays} dias</td>
               </tr>
             ))}
           </DataTable>

@@ -21,5 +21,7 @@ export const config = {
     "/configuracion/:path*",
     "/auditoria/:path*",
     "/api/export/:path*",
+    "/api/upload/:path*",
+    "/api/ai/:path*",
   ],
 };

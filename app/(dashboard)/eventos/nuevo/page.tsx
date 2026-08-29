@@ -20,7 +20,10 @@ export default async function NewEventPage() {
           { name: "location", label: "Ubicacion fisica o virtual", required: true },
           { name: "territoryId", label: "Territorio", type: "select", options: territories.map((territory) => ({ value: territory.id, label: territory.name })) },
           { name: "attendeesCount", label: "Asistentes", type: "number", defaultValue: 0 },
-          { name: "description", label: "Descripcion y objetivo", type: "textarea", required: true },
+          { name: "objective", label: "Objetivo", type: "textarea" },
+          { name: "description", label: "Descripcion", type: "textarea", required: true },
+          { name: "institutions", label: "Instituciones participantes (separadas por coma)" },
+          { name: "indicators", label: "Indicadores impactados (separados por coma)" },
           { name: "impactSummary", label: "Resultados e impacto", type: "textarea", required: true },
         ]}
       />

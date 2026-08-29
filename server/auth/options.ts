@@ -5,6 +5,7 @@ import CredentialsProvider from "next-auth/providers/credentials";
 import * as schema from "@/drizzle/schema";
 import { getDb } from "@/server/db";
 import { rateLimit } from "@/lib/rate-limit";
+import { writeAuditLog } from "@/server/audit/log";
 
 export const authOptions: NextAuthOptions = {
   secret: process.env.NEXTAUTH_SECRET || process.env.AUTH_SECRET,
@@ -32,12 +33,15 @@ export const authOptions: NextAuthOptions = {
         const db = getDb();
         const [user] = await db.select().from(schema.users).where(eq(schema.users.email, email)).limit(1);
         if (!user?.passwordHash || user.status !== "active") {
+          await writeAuditLog({ actorId: user?.id, action: "login.fail", entityType: "user", entityId: email, after: { reason: "usuario_inexistente_o_inactivo" }, ip: forwarded });
           return null;
         }
         const valid = await compare(password, user.passwordHash);
         if (!valid) {
+          await writeAuditLog({ actorId: user.id, action: "login.fail", entityType: "user", entityId: email, after: { reason: "credenciales_invalidas" }, ip: forwarded });
           return null;
         }
+        await writeAuditLog({ actorId: user.id, action: "login.success", entityType: "user", entityId: user.id, ip: forwarded });
         return {
           id: user.id,
           name: user.name,
