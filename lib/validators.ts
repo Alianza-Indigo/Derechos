@@ -211,6 +211,29 @@ export const credentialActionSchema = z.object({
   action: z.enum(["revoke", "renew", "suspend"]),
 });
 
+export const memberReportSchema = z.object({
+  title: z.string().min(5, "Describe brevemente el motivo del reporte."),
+  category: z.enum(caseCategories),
+  description: z.string().min(20, "Describe los hechos con el mayor detalle posible."),
+  consentStatus: z.enum(["documentado", "pendiente", "no_aplica"]).default("pendiente"),
+});
+
+export const memberProfileSchema = z.object({
+  phone: z.string().min(7, "Captura un telefono valido."),
+  email: z.email("Captura un correo valido."),
+  address: z.string().min(5, "Captura tu domicilio o referencia."),
+});
+
+export const memberAccessSchema = z.object({
+  memberId: z.string().min(1),
+  password: z.string().min(8, "La contrasena debe tener al menos 8 caracteres."),
+});
+
+export const caseReassignSchema = z.object({
+  caseId: z.string().min(1),
+  assignedTo: z.string().min(1, "Selecciona un responsable."),
+});
+
 export const userFormSchema = z.object({
   name: z.string().min(3, "Captura el nombre completo."),
   email: z.email("Captura un correo valido."),

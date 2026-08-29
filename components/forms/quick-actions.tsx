@@ -3,8 +3,22 @@
 import { type FormEvent, useActionState, useState } from "react";
 import { Button } from "@/components/ui/button";
 import type { caseStatuses } from "@/lib/constants";
-import { addCaseActionAction, addCasePersonAction, addEvidenceAction, createPrevalenceRecordAction, duplicatePromptAction, restorePromptVersionAction, updateCaseStatusAction, updateProviderConfigAction } from "@/server/actions/platform";
+import { addCaseActionAction, addCasePersonAction, addEvidenceAction, createPrevalenceRecordAction, duplicatePromptAction, reassignCaseAction, restorePromptVersionAction, updateCaseStatusAction, updateProviderConfigAction } from "@/server/actions/platform";
 import type { AiProviderConfig, PrevalenceMetric, PrevalenceStudy, Territory } from "@/lib/types";
+
+export function CaseReassignForm({ caseId, assignedTo, users }: { caseId: string; assignedTo: string; users: Array<{ id: string; name: string }> }) {
+  const [state, action, pending] = useActionState(reassignCaseAction, null);
+  return (
+    <form action={action} className="flex flex-wrap items-center gap-2">
+      <input type="hidden" name="caseId" value={caseId} />
+      <select name="assignedTo" defaultValue={assignedTo} className="h-9 rounded-md border border-slate-300 px-2 text-sm">
+        {users.map((user) => <option key={user.id} value={user.id}>{user.name}</option>)}
+      </select>
+      <Button type="submit" className="h-9 px-3 text-xs" disabled={pending}>{pending ? "..." : "Reasignar responsable"}</Button>
+      {state?.message ? <span className={state.ok ? "text-xs text-emerald-700" : "text-xs text-rose-700"}>{state.message}</span> : null}
+    </form>
+  );
+}
 
 export function CasePersonForm({ caseId }: { caseId: string }) {
   const [state, action, pending] = useActionState(addCasePersonAction, null);

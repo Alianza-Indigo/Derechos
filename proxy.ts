@@ -20,6 +20,7 @@ export const config = {
     "/reportes/:path*",
     "/configuracion/:path*",
     "/auditoria/:path*",
+    "/portal/:path*",
     "/api/export/:path*",
     "/api/upload/:path*",
     "/api/ai/:path*",

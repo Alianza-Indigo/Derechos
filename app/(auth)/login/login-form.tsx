@@ -18,8 +18,10 @@ export function LoginForm() {
     });
     setPending(false);
     if (result?.ok) {
-      // Redireccion relativa al mismo origen: no depende de NEXTAUTH_URL, asi
-      // el login funciona aunque esa variable apunte a otra URL.
+      // Recarga completa al mismo origen: no depende de NEXTAUTH_URL y asegura
+      // que los componentes de servidor tomen la nueva sesion. El layout enruta
+      // a los miembros hacia /portal y al personal al panel.
+      // eslint-disable-next-line @next/next/no-location-assign-relative-destination
       window.location.href = "/dashboard";
       return;
     }

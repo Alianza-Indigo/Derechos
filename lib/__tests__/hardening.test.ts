@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { intensityStyle } from "@/lib/intensity";
-import { aiFeedbackSchema, credentialActionSchema, locationPurgeSchema, roleAssignmentSchema, userFormSchema } from "@/lib/validators";
+import { aiFeedbackSchema, caseReassignSchema, credentialActionSchema, locationPurgeSchema, memberAccessSchema, memberProfileSchema, memberReportSchema, roleAssignmentSchema, userFormSchema } from "@/lib/validators";
 
 describe("endurecimiento del review", () => {
   it("escala la intensidad del mapa por valor y maximo", () => {
@@ -49,5 +49,21 @@ describe("endurecimiento del review", () => {
     expect(roleAssignmentSchema.safeParse({ userId: "u1", role: "super_admin" }).success).toBe(true);
     expect(roleAssignmentSchema.safeParse({ userId: "u1", role: "state_coordination", territoryId: "t1" }).success).toBe(true);
     expect(roleAssignmentSchema.safeParse({ userId: "u1", role: "no_existe" }).success).toBe(false);
+  });
+
+  it("valida el reporte levantado por un miembro", () => {
+    const ok = memberReportSchema.safeParse({ title: "Negacion de servicio", category: "Salud", description: "Me negaron atencion medica el dia de ayer en el hospital." });
+    expect(ok.success).toBe(true);
+    if (ok.success) expect(ok.data.consentStatus).toBe("pendiente");
+    expect(memberReportSchema.safeParse({ title: "x", category: "Salud", description: "corta" }).success).toBe(false);
+    expect(memberReportSchema.safeParse({ title: "Motivo valido", category: "Inexistente", description: "Descripcion suficientemente larga para pasar." }).success).toBe(false);
+  });
+
+  it("valida el perfil del miembro y su acceso", () => {
+    expect(memberProfileSchema.safeParse({ phone: "6141112233", email: "a@b.mx", address: "Calle 1" }).success).toBe(true);
+    expect(memberProfileSchema.safeParse({ phone: "123", email: "no-mail", address: "x" }).success).toBe(false);
+    expect(memberAccessSchema.safeParse({ memberId: "m1", password: "12345678" }).success).toBe(true);
+    expect(memberAccessSchema.safeParse({ memberId: "m1", password: "corta" }).success).toBe(false);
+    expect(caseReassignSchema.safeParse({ caseId: "c1", assignedTo: "u1" }).success).toBe(true);
   });
 });

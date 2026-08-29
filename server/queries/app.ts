@@ -146,6 +146,28 @@ export async function getMemberById(id: string) {
   return redactMember(member, canViewSensitive(user));
 }
 
+// Portal de miembro: el miembro ligado al usuario autenticado (sus propios
+// datos, sin redaccion). Devuelve undefined si el usuario no es un miembro.
+export async function getMemberSelf() {
+  const db = getDb();
+  const user = await getCurrentUser();
+  const [row] = await db
+    .select({ member: schema.members, credential: schema.memberCredentials })
+    .from(schema.members)
+    .leftJoin(schema.memberCredentials, eq(schema.memberCredentials.memberId, schema.members.id))
+    .where(eq(schema.members.userId, user.id))
+    .limit(1);
+  return row ? dbMemberToDomain(row.member, row.credential) : undefined;
+}
+
+// Reportes levantados por el propio miembro (casos que el abrio).
+export async function getMyReports() {
+  const db = getDb();
+  const user = await getCurrentUser();
+  const rows = await db.select().from(schema.cases).where(eq(schema.cases.openedBy, user.id)).orderBy(desc(schema.cases.openedAt));
+  return rows.map((record) => dbCaseToDomain(record));
+}
+
 // Publico (pagina de credencial): solo datos minimos, sin sesion.
 export async function getMemberByCredentialSlug(slug: string) {
   const db = getDb();

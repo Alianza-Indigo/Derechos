@@ -3,11 +3,11 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardHeader } from "@/components/ui/card";
 import { DataTable } from "@/components/ui/table";
 import { LinkButton } from "@/components/ui/button";
-import { CaseActionForm, CasePersonForm, CaseStatusForm, EvidenceForm } from "@/components/forms/quick-actions";
+import { CaseActionForm, CasePersonForm, CaseReassignForm, CaseStatusForm, EvidenceForm } from "@/components/forms/quick-actions";
 import { AssistantConsole } from "@/components/assistant/assistant-console";
 import { caseStatuses } from "@/lib/constants";
 import { formatDate } from "@/lib/utils";
-import { getAssistantData, getCaseById, getCurrentUser, getTerritoryName, getUserName } from "@/server/queries/app";
+import { getAssistantData, getCaseById, getCurrentUser, getTerritoryName, getUserName, getUsers } from "@/server/queries/app";
 import { hasAnyPermission } from "@/server/permissions/rbac";
 
 export default async function CaseDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -18,6 +18,7 @@ export default async function CaseDetailPage({ params }: { params: Promise<{ id:
   const canWrite = hasAnyPermission(user, ["write:case", "write:territory", "*"]);
   const canUseAi = hasAnyPermission(user, ["ai:use", "ai:admin", "*"]);
   const prompts = canUseAi ? (await getAssistantData()).prompts : [];
+  const staff = canWrite ? (await getUsers()).map((item) => ({ id: item.id, name: item.name })) : [];
   return (
     <div className="space-y-6">
       <Card>
@@ -35,6 +36,12 @@ export default async function CaseDetailPage({ params }: { params: Promise<{ id:
       <Card>
         <CardHeader title="Cambio de estado" description="El motivo es obligatorio y queda en historial/auditoria." />
         <CaseStatusForm caseId={record.id} statuses={caseStatuses} />
+        {canWrite ? (
+          <div className="mt-4 border-t border-slate-100 pt-4">
+            <p className="mb-2 text-sm font-medium text-slate-700">Responsable</p>
+            <CaseReassignForm caseId={record.id} assignedTo={record.assignedTo} users={staff} />
+          </div>
+        ) : null}
       </Card>
       <section className="grid gap-6 xl:grid-cols-2">
         <Card>

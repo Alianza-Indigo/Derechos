@@ -20,9 +20,13 @@ import {
   commissionFormSchema,
   evidenceFormSchema,
   eventFormSchema,
+  caseReassignSchema,
   locationPauseSchema,
   locationSettingSchema,
+  memberAccessSchema,
   memberFormSchema,
+  memberProfileSchema,
+  memberReportSchema,
   metricSchema,
   organizationSchema,
   prevalenceRecordSchema,
@@ -38,7 +42,7 @@ import {
 import { writeAuditLog } from "@/server/audit/log";
 import { getDb } from "@/server/db";
 import { canAccessTerritory, hasAnyPermission } from "@/server/permissions/rbac";
-import { getCaseById, getCommissionById, getCurrentUser, getEventById, getMemberById } from "@/server/queries/app";
+import { getCaseById, getCommissionById, getCurrentUser, getEventById, getMemberById, getMemberSelf } from "@/server/queries/app";
 import type { User } from "@/lib/types";
 
 type ActionResult = {
@@ -1150,6 +1154,150 @@ export async function removeUserRoleAction(_: ActionResult | null, formData: For
   await writeAuditLog({ actorId: user.id, action: "user.role_remove", entityType: "user", entityId: parsed.data.userId, after: { role: parsed.data.role, scopeType: parsed.data.scopeType } });
   revalidatePath("/configuracion/usuarios");
   return { ok: true, message: "Rol removido." };
+}
+
+// --------------------------------------------------------------------------
+// Portal de miembro: levantar reportes, seguir sus casos, actualizar datos
+// --------------------------------------------------------------------------
+export async function createMemberReportAction(_: ActionResult | null, formData: FormData): Promise<ActionResult> {
+  const user = await getCurrentUser();
+  const member = await getMemberSelf();
+  if (!member) {
+    return { ok: false, message: "Solo los miembros pueden levantar reportes desde el portal." };
+  }
+  const parsed = memberReportSchema.safeParse(Object.fromEntries(formData));
+  if (!parsed.success) {
+    return { ok: false, message: parsed.error.issues[0]?.message ?? "Datos invalidos." };
+  }
+  const db = getDb();
+  const [{ total }] = await db.select({ total: sql<number>`count(*)::int` }).from(schema.cases);
+  const id = crypto.randomUUID();
+  const caseNumber = `CASO-2026-CHH-${String(total + 1).padStart(4, "0")}`;
+  // El miembro es quien abre el reporte; queda sin responsable asignado (se
+  // asigna al propio miembro como marcador) y en estado "Nuevo" para que el
+  // personal del territorio lo triage y reasigne.
+  await db.insert(schema.cases).values({
+    id,
+    caseNumber,
+    title: parsed.data.title,
+    description: parsed.data.description,
+    category: parsed.data.category,
+    priority: "Media",
+    status: "Nuevo",
+    territoryId: member.territoryId,
+    openedBy: user.id,
+    assignedTo: user.id,
+    openedAt: new Date(),
+  });
+  await db.insert(schema.casePeople).values({
+    caseId: id,
+    personType: "solicitante",
+    name: member.fullName,
+    contact: "Reservado",
+    demographicData: {},
+    consentStatus: parsed.data.consentStatus,
+  });
+  await db.insert(schema.caseStatusHistory).values({
+    caseId: id,
+    fromStatus: null,
+    toStatus: "Nuevo",
+    reason: "Reporte levantado por el miembro desde el portal",
+    changedBy: user.id,
+  });
+  await writeAuditLog({ actorId: user.id, action: "case.member_report", entityType: "case", entityId: id, after: { caseNumber, category: parsed.data.category } });
+  revalidatePath("/portal/mis-reportes");
+  return { ok: true, message: `Reporte ${caseNumber} enviado. El equipo le dara seguimiento.` };
+}
+
+export async function updateMemberProfileAction(_: ActionResult | null, formData: FormData): Promise<ActionResult> {
+  const user = await getCurrentUser();
+  const member = await getMemberSelf();
+  if (!member) {
+    return DENIED;
+  }
+  const parsed = memberProfileSchema.safeParse(Object.fromEntries(formData));
+  if (!parsed.success) {
+    return { ok: false, message: parsed.error.issues[0]?.message ?? "Datos invalidos." };
+  }
+  const db = getDb();
+  await db.update(schema.members).set({
+    phone: parsed.data.phone,
+    email: parsed.data.email,
+    address: parsed.data.address,
+    updatedAt: new Date(),
+  }).where(eq(schema.members.id, member.id));
+  await writeAuditLog({ actorId: user.id, action: "member.profile_update", entityType: "member", entityId: member.id, after: { phone: parsed.data.phone, email: parsed.data.email } });
+  revalidatePath("/portal/perfil");
+  return { ok: true, message: "Datos actualizados." };
+}
+
+// Personal: provisiona o restablece el acceso al portal de un miembro
+// (crea la cuenta de usuario ligada con rol member y define su contrasena).
+export async function setMemberAccessAction(_: ActionResult | null, formData: FormData): Promise<ActionResult> {
+  const actor = await getCurrentUser();
+  if (!can(actor, ["write:territory", "*"])) {
+    return DENIED;
+  }
+  const parsed = memberAccessSchema.safeParse(Object.fromEntries(formData));
+  if (!parsed.success) {
+    return { ok: false, message: parsed.error.issues[0]?.message ?? "Datos invalidos." };
+  }
+  const member = await getMemberById(parsed.data.memberId);
+  if (!member) {
+    return { ok: false, message: "No tienes acceso a este miembro." };
+  }
+  const db = getDb();
+  const passwordHash = await hash(parsed.data.password, 12);
+  const [record] = await db.select().from(schema.members).where(eq(schema.members.id, parsed.data.memberId)).limit(1);
+  if (record.userId) {
+    await db.update(schema.users).set({ passwordHash, status: "active", updatedAt: new Date() }).where(eq(schema.users.id, record.userId));
+    await writeAuditLog({ actorId: actor.id, action: "member.access_reset", entityType: "member", entityId: member.id, after: { userId: record.userId } });
+    revalidatePath(`/miembros/${member.id}`);
+    return { ok: true, message: "Contrasena del portal restablecida." };
+  }
+  // Sin cuenta previa: crear usuario ligado con rol member en su territorio.
+  const existing = await db.select({ id: schema.users.id }).from(schema.users).where(eq(schema.users.email, record.email.toLowerCase())).limit(1);
+  if (existing.length) {
+    return { ok: false, message: "Ya existe un usuario con el correo del miembro. Usa otro correo o vincula manualmente." };
+  }
+  const userId = crypto.randomUUID();
+  await db.insert(schema.users).values({
+    id: userId,
+    name: record.fullName,
+    email: record.email.toLowerCase(),
+    phone: record.phone,
+    passwordHash,
+    providerId: null,
+    status: "active",
+  });
+  const roleId = await resolveRoleId(db, "member");
+  if (roleId) {
+    await db.insert(schema.userRoles).values({ userId, roleId, scopeType: "territory", scopeId: record.territoryId }).onConflictDoNothing();
+  }
+  await db.update(schema.members).set({ userId, updatedAt: new Date() }).where(eq(schema.members.id, member.id));
+  await writeAuditLog({ actorId: actor.id, action: "member.access_provision", entityType: "member", entityId: member.id, after: { userId } });
+  revalidatePath(`/miembros/${member.id}`);
+  return { ok: true, message: "Acceso al portal creado. El miembro ya puede iniciar sesion con su correo." };
+}
+
+export async function reassignCaseAction(_: ActionResult | null, formData: FormData): Promise<ActionResult> {
+  const user = await getCurrentUser();
+  if (!can(user, ["write:case", "write:territory", "*"])) {
+    return DENIED;
+  }
+  const parsed = caseReassignSchema.safeParse(Object.fromEntries(formData));
+  if (!parsed.success) {
+    return { ok: false, message: parsed.error.issues[0]?.message ?? "Datos invalidos." };
+  }
+  const record = await getCaseById(parsed.data.caseId);
+  if (!record) {
+    return { ok: false, message: "No tienes acceso a este caso." };
+  }
+  const db = getDb();
+  await db.update(schema.cases).set({ assignedTo: parsed.data.assignedTo }).where(eq(schema.cases.id, parsed.data.caseId));
+  await writeAuditLog({ actorId: user.id, action: "case.reassign", entityType: "case", entityId: parsed.data.caseId, before: { assignedTo: record.assignedTo }, after: { assignedTo: parsed.data.assignedTo } });
+  revalidatePath(`/casos/${parsed.data.caseId}`);
+  return { ok: true, message: "Responsable actualizado." };
 }
 
 function nextYear() {
