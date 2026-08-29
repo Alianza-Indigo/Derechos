@@ -3,19 +3,30 @@ import { Badge } from "@/components/ui/badge";
 import { DataTable } from "@/components/ui/table";
 import { LeafletMap } from "@/components/maps/leaflet-map";
 import { createCheckInAction } from "@/server/actions/platform";
-import { getOperationsData, getTerritories, getTerritoryName, getUserName } from "@/server/queries/app";
+import { getCurrentUser, getOperationsData, getTerritories, getTerritoryName, getUserName } from "@/server/queries/app";
+import { hasAnyPermission } from "@/server/permissions/rbac";
 import { formatDateTime } from "@/lib/utils";
 import { CheckInForm } from "./check-in-form";
+import { LocationPauseControl } from "./location-pause-control";
 
 export default async function GeolocationPage() {
   const data = await getOperationsData();
   const territories = await getTerritories();
+  const user = await getCurrentUser();
+  const canCheckIn = hasAnyPermission(user, ["location:checkin", "write:field", "*"]);
+  const ownSetting = data.locationSettings.find((setting) => setting.userId === user.id);
   return (
     <div className="space-y-6">
       <Card>
         <CardHeader title="Mapa interno de ubicaciones autorizadas" description="Auditable, sensible y nunca publico. Retencion configurable: 7, 30, 60 o 90 dias." />
         <LeafletMap pings={data.pings} territories={territories} />
       </Card>
+      {canCheckIn ? (
+        <Card>
+          <CardHeader title="Mi ubicacion" description="Puedes pausar tu ubicacion con un motivo justificado y reactivarla cuando corresponda." />
+          <LocationPauseControl enabled={ownSetting?.enabled ?? true} reason={ownSetting?.disabledReason} />
+        </Card>
+      ) : null}
       <section className="grid gap-6 xl:grid-cols-[0.7fr_1.3fr]">
         <Card>
           <CardHeader title="Check-in manual" description="Usa Browser Geolocation API desde web/PWA." />

@@ -72,6 +72,11 @@ export const locationSettingSchema = z.object({
   retentionDays: z.coerce.number().int().min(1).max(365),
 });
 
+export const locationPauseSchema = z.object({
+  paused: formBoolean,
+  reason: z.string().optional(),
+});
+
 export const providerConfigSchema = z.object({
   providerKey: z.enum(["gemini", "openai", "anthropic"]),
   enabled: formBoolean,

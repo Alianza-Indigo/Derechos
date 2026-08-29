@@ -14,6 +14,7 @@ import {
   commissionFormSchema,
   evidenceFormSchema,
   eventFormSchema,
+  locationPauseSchema,
   locationSettingSchema,
   memberFormSchema,
   organizationSchema,
@@ -331,6 +332,48 @@ export async function createCheckInAction(_: ActionResult | null, formData: Form
   await writeAuditLog({ actorId: user.id, action: "geolocation.check_in", entityType: "delegate_location_ping", entityId: id, after: { ...parsed.data, latitude: "redacted", longitude: "redacted" } });
   revalidatePath("/operacion-territorial/geolocalizacion");
   return { ok: true, message: "Check-in registrado con ubicacion autorizada y auditoria." };
+}
+
+// El propio delegado/comisionado pausa o reactiva su ubicacion, con motivo.
+export async function setOwnLocationStateAction(_: ActionResult | null, formData: FormData): Promise<ActionResult> {
+  const user = await getCurrentUser();
+  if (!can(user, ["location:checkin", "write:field"])) {
+    return DENIED;
+  }
+  const parsed = locationPauseSchema.safeParse(Object.fromEntries(formData));
+  if (!parsed.success) {
+    return { ok: false, message: parsed.error.issues[0]?.message ?? "Datos invalidos." };
+  }
+  const reason = parsed.data.reason?.trim();
+  if (parsed.data.paused && !reason) {
+    return { ok: false, message: "Captura el motivo para pausar tu ubicacion." };
+  }
+  const db = getDb();
+  const [existing] = await db.select().from(schema.locationTrackingSettings).where(eq(schema.locationTrackingSettings.userId, user.id)).limit(1);
+  if (existing) {
+    await db.update(schema.locationTrackingSettings).set({
+      enabled: !parsed.data.paused,
+      disabledReason: parsed.data.paused ? reason : null,
+      updatedBy: user.id,
+      updatedAt: new Date(),
+    }).where(eq(schema.locationTrackingSettings.id, existing.id));
+  } else {
+    await db.insert(schema.locationTrackingSettings).values({
+      userId: user.id,
+      enabled: !parsed.data.paused,
+      disabledReason: parsed.data.paused ? reason : null,
+      updatedBy: user.id,
+    });
+  }
+  await writeAuditLog({
+    actorId: user.id,
+    action: parsed.data.paused ? "geolocation.pause" : "geolocation.resume",
+    entityType: "location_tracking_setting",
+    entityId: user.id,
+    after: { paused: parsed.data.paused, reason: parsed.data.paused ? reason : null },
+  });
+  revalidatePath("/operacion-territorial/geolocalizacion");
+  return { ok: true, message: parsed.data.paused ? "Ubicacion pausada con motivo registrado." : "Ubicacion reactivada." };
 }
 
 // --------------------------------------------------------------------------
