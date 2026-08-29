@@ -1,6 +1,6 @@
 import { Card, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { DataTable } from "@/components/ui/table";
+import { DataTable, EmptyState } from "@/components/ui/table";
 import { LeafletMap } from "@/components/maps/leaflet-map";
 import { createCheckInAction } from "@/server/actions/platform";
 import { getCurrentUser, getOperationsData, getTerritories, getTerritoryName, getUserName } from "@/server/queries/app";
@@ -10,7 +10,7 @@ import { CheckInForm } from "./check-in-form";
 import { LocationPauseControl } from "./location-pause-control";
 
 export default async function GeolocationPage() {
-  const data = await getOperationsData();
+  const data = await getOperationsData({ audit: true });
   const territories = await getTerritories();
   const user = await getCurrentUser();
   const canCheckIn = hasAnyPermission(user, ["location:checkin", "write:field", "*"]);
@@ -34,17 +34,21 @@ export default async function GeolocationPage() {
         </Card>
         <Card>
           <CardHeader title="Ultimas ubicaciones" />
-          <DataTable headers={["Usuario", "Territorio", "Estado", "Precision", "Fecha"]}>
-            {data.pings.map((ping) => (
-              <tr key={ping.id}>
-                <td className="px-4 py-3">{getUserName(ping.userId)}</td>
-                <td className="px-4 py-3">{getTerritoryName(ping.territoryId)}</td>
-                <td className="px-4 py-3"><Badge tone={ping.status === "en_comision" ? "green" : ping.status === "pausado" ? "amber" : "slate"}>{ping.status}</Badge></td>
-                <td className="px-4 py-3">{ping.accuracyMeters} m</td>
-                <td className="px-4 py-3">{formatDateTime(ping.capturedAt)}</td>
-              </tr>
-            ))}
-          </DataTable>
+          {data.pings.length ? (
+            <DataTable headers={["Usuario", "Territorio", "Estado", "Precision", "Fecha"]}>
+              {data.pings.map((ping) => (
+                <tr key={ping.id}>
+                  <td className="px-4 py-3">{getUserName(ping.userId)}</td>
+                  <td className="px-4 py-3">{getTerritoryName(ping.territoryId)}</td>
+                  <td className="px-4 py-3"><Badge tone={ping.status === "en_comision" ? "green" : ping.status === "pausado" ? "amber" : "slate"}>{ping.status}</Badge></td>
+                  <td className="px-4 py-3">{ping.accuracyMeters} m</td>
+                  <td className="px-4 py-3">{formatDateTime(ping.capturedAt)}</td>
+                </tr>
+              ))}
+            </DataTable>
+          ) : (
+            <EmptyState title="Sin ubicaciones" description="No hay check-ins registrados o visibles para tu alcance." />
+          )}
         </Card>
       </section>
     </div>

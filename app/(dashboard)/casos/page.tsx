@@ -2,7 +2,7 @@ import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { LinkButton } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
-import { DataTable } from "@/components/ui/table";
+import { DataTable, EmptyState } from "@/components/ui/table";
 import { caseCategories, caseStatuses, priorities } from "@/lib/constants";
 import { formatDate } from "@/lib/utils";
 import { getTerritories, getTerritoryName, getUserName, getUsers, listCases } from "@/server/queries/app";
@@ -55,20 +55,24 @@ export default async function CasesPage({ searchParams }: { searchParams: Promis
         </div>
       </form>
       <p className="mb-2 text-xs text-slate-500">{records.length} casos</p>
-      <DataTable headers={["Folio", "Titulo", "Categoria", "Prioridad", "Estado", "Territorio", "Responsable", "Apertura"]}>
-        {records.map((record) => (
-          <tr key={record.id}>
-            <td className="px-4 py-3 font-medium"><Link href={`/casos/${record.id}`}>{record.caseNumber}</Link></td>
-            <td className="px-4 py-3">{record.title}</td>
-            <td className="px-4 py-3">{record.category}</td>
-            <td className="px-4 py-3"><Badge tone={record.priority === "Urgente" ? "red" : record.priority === "Alta" ? "amber" : "slate"}>{record.priority}</Badge></td>
-            <td className="px-4 py-3">{record.status}</td>
-            <td className="px-4 py-3">{getTerritoryName(record.territoryId)}</td>
-            <td className="px-4 py-3">{getUserName(record.assignedTo)}</td>
-            <td className="px-4 py-3">{formatDate(record.openedAt)}</td>
-          </tr>
-        ))}
-      </DataTable>
+      {records.length ? (
+        <DataTable headers={["Folio", "Titulo", "Categoria", "Prioridad", "Estado", "Territorio", "Responsable", "Apertura"]}>
+          {records.map((record) => (
+            <tr key={record.id}>
+              <td className="px-4 py-3 font-medium"><Link href={`/casos/${record.id}`}>{record.caseNumber}</Link></td>
+              <td className="px-4 py-3">{record.title}</td>
+              <td className="px-4 py-3">{record.category}</td>
+              <td className="px-4 py-3"><Badge tone={record.priority === "Urgente" ? "red" : record.priority === "Alta" ? "amber" : "slate"}>{record.priority}</Badge></td>
+              <td className="px-4 py-3">{record.status}</td>
+              <td className="px-4 py-3">{getTerritoryName(record.territoryId)}</td>
+              <td className="px-4 py-3">{getUserName(record.assignedTo)}</td>
+              <td className="px-4 py-3">{formatDate(record.openedAt)}</td>
+            </tr>
+          ))}
+        </DataTable>
+      ) : (
+        <EmptyState title="Sin casos" description="No hay expedientes que coincidan con los filtros seleccionados." />
+      )}
     </Card>
   );
 }

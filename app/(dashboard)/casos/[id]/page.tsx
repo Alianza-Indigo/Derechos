@@ -4,9 +4,10 @@ import { Card, CardHeader } from "@/components/ui/card";
 import { DataTable } from "@/components/ui/table";
 import { LinkButton } from "@/components/ui/button";
 import { CaseActionForm, CasePersonForm, CaseStatusForm, EvidenceForm } from "@/components/forms/quick-actions";
+import { AssistantConsole } from "@/components/assistant/assistant-console";
 import { caseStatuses } from "@/lib/constants";
 import { formatDate } from "@/lib/utils";
-import { getCaseById, getCurrentUser, getTerritoryName, getUserName } from "@/server/queries/app";
+import { getAssistantData, getCaseById, getCurrentUser, getTerritoryName, getUserName } from "@/server/queries/app";
 import { hasAnyPermission } from "@/server/permissions/rbac";
 
 export default async function CaseDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -15,6 +16,8 @@ export default async function CaseDetailPage({ params }: { params: Promise<{ id:
   if (!record) notFound();
   const user = await getCurrentUser();
   const canWrite = hasAnyPermission(user, ["write:case", "write:territory", "*"]);
+  const canUseAi = hasAnyPermission(user, ["ai:use", "ai:admin", "*"]);
+  const prompts = canUseAi ? (await getAssistantData()).prompts : [];
   return (
     <div className="space-y-6">
       <Card>
@@ -78,6 +81,12 @@ export default async function CaseDetailPage({ params }: { params: Promise<{ id:
           ))}
         </DataTable>
       </Card>
+      {canUseAi && prompts.some((prompt) => prompt.enabled) ? (
+        <Card>
+          <CardHeader title="Asistente IA del caso" description="Genera borradores con el contexto de este caso (respetando tu rol y territorio)." />
+          <AssistantConsole prompts={prompts} defaultCaseId={record.id} scope="caso" compact />
+        </Card>
+      ) : null}
     </div>
   );
 }

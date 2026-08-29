@@ -2,14 +2,25 @@ import { notFound } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardHeader } from "@/components/ui/card";
 import { DataTable } from "@/components/ui/table";
+import { CredentialManager } from "@/components/forms/credential-manager";
 import { credentialQrDataUrl, credentialUrl } from "@/lib/qr";
 import { formatDate } from "@/lib/utils";
-import { getMemberById, getTerritoryName } from "@/server/queries/app";
+import { getCurrentUser, getMemberById, getTerritoryName } from "@/server/queries/app";
+import { hasAnyPermission } from "@/server/permissions/rbac";
+
+const credentialTone: Record<string, "green" | "amber" | "red" | "slate"> = {
+  activa: "green",
+  suspendida: "amber",
+  revocada: "red",
+  vencida: "slate",
+};
 
 export default async function MemberDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const member = await getMemberById(id);
   if (!member) notFound();
+  const user = await getCurrentUser();
+  const canManage = hasAnyPermission(user, ["write:territory", "*"]);
   const qr = await credentialQrDataUrl(member.credentialSlug);
 
   return (
@@ -22,7 +33,18 @@ export default async function MemberDetailPage({ params }: { params: Promise<{ i
           <p className="mt-3 font-semibold">{member.fullName}</p>
           <p className="text-sm text-slate-600">{member.memberNumber}</p>
           <p className="mt-2 text-xs text-slate-500">{credentialUrl(member.credentialSlug)}</p>
+          <div className="mt-3 flex items-center justify-center gap-2 text-sm">
+            <span className="text-slate-600">Estado:</span>
+            <Badge tone={credentialTone[member.credentialStatus] ?? "slate"}>{member.credentialStatus}</Badge>
+            {member.credentialExpiresAt ? <span className="text-xs text-slate-500">vence {formatDate(member.credentialExpiresAt)}</span> : null}
+          </div>
         </div>
+        {canManage ? (
+          <div className="mt-4 border-t border-slate-100 pt-4">
+            <p className="mb-2 text-sm font-medium text-slate-700">Gestion de credencial</p>
+            <CredentialManager memberId={member.id} status={member.credentialStatus} />
+          </div>
+        ) : null}
       </Card>
       <Card>
         <CardHeader title="Perfil interno de miembro" description="Incluye datos sensibles solo para usuarios autorizados." />

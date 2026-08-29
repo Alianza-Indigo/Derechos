@@ -1,15 +1,17 @@
 import { Card, CardHeader } from "@/components/ui/card";
 import { DataTable } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { LocationSettingsEditor, OrganizationForm, TerritoryLocationEditor } from "@/components/config/config-forms";
-import { getConfiguration, getCurrentUser, getUserName, getUsers } from "@/server/queries/app";
+import { LocationPurgeForm, LocationSettingsEditor, OrganizationForm, TerritoryLocationEditor } from "@/components/config/config-forms";
+import { getConfiguration, getCurrentUser, getTerritories, getUserName, getUsers } from "@/server/queries/app";
 import { hasAnyPermission } from "@/server/permissions/rbac";
 
 export default async function ConfigurationPage() {
   const data = await getConfiguration();
   const user = await getCurrentUser();
   const canConfig = hasAnyPermission(user, ["write:config", "*"]);
+  const canPurgeLocation = canConfig && hasAnyPermission(user, ["location:read", "*"]);
   const users = await getUsers();
+  const territories = await getTerritories();
   const labels = Object.fromEntries(users.map((item) => [item.id, item.name]));
 
   return (
@@ -65,6 +67,12 @@ export default async function ConfigurationPage() {
           </DataTable>
         )}
       </Card>
+      {canPurgeLocation ? (
+        <Card>
+          <CardHeader title="Borrado de historial de ubicacion" description="Borrado administrativo manual conforme a la politica interna de retencion. Accion permanente y auditada." />
+          <LocationPurgeForm territories={territories} users={users.map((item) => ({ id: item.id, name: item.name }))} />
+        </Card>
+      ) : null}
     </div>
   );
 }

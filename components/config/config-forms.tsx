@@ -2,8 +2,8 @@
 
 import { useActionState } from "react";
 import { Button } from "@/components/ui/button";
-import { updateLocationSettingAction, updateOrganizationAction, updateTerritoryLocationSettingAction } from "@/server/actions/platform";
-import type { LocationTrackingSetting } from "@/lib/types";
+import { purgeLocationHistoryAction, updateLocationSettingAction, updateOrganizationAction, updateTerritoryLocationSettingAction } from "@/server/actions/platform";
+import type { LocationTrackingSetting, Territory } from "@/lib/types";
 
 type TerritorySetting = { territoryId: string; name: string; type: string; enabled: boolean; mode: string; retentionDays: number };
 
@@ -99,4 +99,35 @@ function TerritoryRow({ setting }: { setting: TerritorySetting }) {
 
 export function TerritoryLocationEditor({ settings }: { settings: TerritorySetting[] }) {
   return <div>{settings.map((setting) => <TerritoryRow key={setting.territoryId} setting={setting} />)}</div>;
+}
+
+export function LocationPurgeForm({ territories, users }: { territories: Territory[]; users: Array<{ id: string; name: string }> }) {
+  const [state, action, pending] = useActionState(purgeLocationHistoryAction, null);
+  return (
+    <form action={action} className="grid gap-3 md:grid-cols-4">
+      <label className="text-sm"><span className="mb-1 block font-medium text-slate-700">Alcance</span>
+        <select name="scope" className="h-10 w-full rounded-md border border-slate-300 px-2 text-sm">
+          <option value="all">Todo el historial</option>
+          <option value="territory">Por territorio</option>
+          <option value="user">Por usuario</option>
+        </select></label>
+      <label className="text-sm"><span className="mb-1 block font-medium text-slate-700">Territorio</span>
+        <select name="territoryId" className="h-10 w-full rounded-md border border-slate-300 px-2 text-sm">
+          <option value="">-</option>
+          {territories.map((territory) => <option key={territory.id} value={territory.id}>{territory.name}</option>)}
+        </select></label>
+      <label className="text-sm"><span className="mb-1 block font-medium text-slate-700">Usuario</span>
+        <select name="userId" className="h-10 w-full rounded-md border border-slate-300 px-2 text-sm">
+          <option value="">-</option>
+          {users.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+        </select></label>
+      <label className="text-sm"><span className="mb-1 block font-medium text-slate-700">Anterior a</span>
+        <input name="before" type="date" className="h-10 w-full rounded-md border border-slate-300 px-2 text-sm" /></label>
+      <div className="md:col-span-4 space-y-2">
+        <p className="text-xs text-slate-500">El borrado es permanente y queda registrado en auditoria. Aplica la politica interna de retencion.</p>
+        <Msg state={state} />
+        <Button type="submit" variant="danger" disabled={pending}>{pending ? "Eliminando..." : "Eliminar historial"}</Button>
+      </div>
+    </form>
+  );
 }

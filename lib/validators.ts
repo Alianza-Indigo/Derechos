@@ -184,3 +184,37 @@ export const aiRunSchema = z.object({
   relatedEventId: z.string().optional(),
   fieldCommissionId: z.string().optional(),
 });
+
+export const aiFeedbackSchema = z.object({
+  aiRunId: z.string().min(1),
+  rating: z.coerce.number().int().min(1).max(5),
+  comment: z.string().max(1000).optional(),
+});
+
+export const credentialActionSchema = z.object({
+  memberId: z.string().min(1),
+  action: z.enum(["revoke", "renew", "suspend"]),
+});
+
+export const locationPurgeSchema = z.object({
+  scope: z.enum(["all", "territory", "user"]),
+  territoryId: z.string().optional(),
+  userId: z.string().optional(),
+  before: z.string().optional(),
+});
+
+export type MemberFilters = {
+  q?: string;
+  territoryId?: string;
+  status?: string;
+  from?: string;
+  to?: string;
+};
+
+export type PrevalenceFilters = {
+  studyId?: string;
+  metricId?: string;
+  territoryId?: string;
+  from?: string;
+  to?: string;
+};

@@ -17,6 +17,7 @@ type ResolvedProvider = {
   displayName: string;
   defaultModel: string;
   apiKey: string | null;
+  enabled: boolean;
 };
 
 const blockedPatterns = [/fabric(a|ar).*evidencia/i, /ocult(a|ar).*evidencia/i, /alter(a|ar).*documento/i];
@@ -42,10 +43,25 @@ export async function runAssistant({ prompt, message, context }: RunAssistantInp
   const { selected, candidates } = await resolveProvider(prompt);
   const keyFor = (p: ResolvedProvider) => p.apiKey || process.env[ENV_BY_PROVIDER[p.key]] || "";
   let active = selected;
-  let apiKey = keyFor(selected);
+  // Proveedor deshabilitado: no se ejecuta en modo simulado; se intenta un
+  // proveedor habilitado por prioridad y, si no hay ninguno, se devuelve error.
+  if (!selected.enabled) {
+    const enabledAlternative = candidates.find((candidate) => candidate.enabled && keyFor(candidate));
+    if (!enabledAlternative) {
+      return {
+        output: `El proveedor ${selected.displayName} esta deshabilitado y no hay otro proveedor habilitado con credenciales. Actívalo en Configuracion > IA o selecciona otro proveedor.`,
+        provider: selected.key,
+        model: selected.defaultModel,
+        status: "disabled",
+        tokenUsage: {},
+      };
+    }
+    active = enabledAlternative;
+  }
+  let apiKey = keyFor(active);
   // Fallback por prioridad si el proveedor elegido no tiene credenciales.
   if (!apiKey && process.env.AI_ENABLE_PROVIDER_FALLBACK === "true") {
-    const alternative = candidates.find((candidate) => candidate.key !== selected.key && keyFor(candidate));
+    const alternative = candidates.find((candidate) => candidate.enabled && candidate.key !== active.key && keyFor(candidate));
     if (alternative) {
       active = alternative;
       apiKey = keyFor(alternative);
@@ -92,6 +108,7 @@ function toResolved(config: typeof aiProviderConfigs.$inferSelect): ResolvedProv
     displayName: config.displayName,
     defaultModel: config.defaultModel,
     apiKey: config.apiKey,
+    enabled: config.enabled,
   };
 }
 
@@ -108,7 +125,7 @@ async function resolveProvider(prompt: AiPromptTemplate): Promise<{ selected: Re
 
   if (!provider) {
     return {
-      selected: { key: "openai", displayName: "ChatGPT/OpenAI", defaultModel: process.env.AI_DEFAULT_MODEL || "gpt-5-mini", apiKey: null },
+      selected: { key: "openai", displayName: "ChatGPT/OpenAI", defaultModel: process.env.AI_DEFAULT_MODEL || "gpt-5-mini", apiKey: null, enabled: true },
       candidates,
     };
   }

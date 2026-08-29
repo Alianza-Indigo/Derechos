@@ -1,12 +1,14 @@
 import { cache } from "react";
 import { organization, reports } from "@/lib/mock-data";
 import type { HumanRightsCase, Member, User } from "@/lib/types";
-import { eq, desc } from "drizzle-orm";
+import type { MemberFilters } from "@/lib/validators";
+import { eq, desc, inArray } from "drizzle-orm";
 import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
 import * as schema from "@/drizzle/schema";
 import { getDb } from "@/server/db";
 import { authOptions } from "@/server/auth/options";
+import { writeAuditLog } from "@/server/audit/log";
 import { canAccessCase, canAccessTerritory, canViewSensitive, hasAnyPermission } from "@/server/permissions/rbac";
 
 // La aplicacion lee siempre de Postgres (getDb exige DATABASE_URL). Los nombres
@@ -104,7 +106,8 @@ export async function getDashboardData() {
   };
 }
 
-export async function listMembers(query?: string) {
+export async function listMembers(filters?: string | MemberFilters) {
+  const f: MemberFilters = typeof filters === "string" ? { q: filters } : filters ?? {};
   const db = getDb();
   const user = await getCurrentUser();
   const sensitive = canViewSensitive(user);
@@ -116,8 +119,12 @@ export async function listMembers(query?: string) {
   const domain = rows
     .map(({ member, credential }) => dbMemberToDomain(member, credential))
     .filter((member) => canAccessTerritory(user, member.territoryId))
+    .filter((member) => (f.territoryId ? member.territoryId === f.territoryId : true))
+    .filter((member) => (f.status ? member.status === f.status : true))
+    .filter((member) => (f.from ? member.joinedAt >= f.from : true))
+    .filter((member) => (f.to ? member.joinedAt <= `${f.to}T23:59:59.999Z` : true))
     .map((member) => redactMember(member, sensitive));
-  return filterText(domain, query, (member) => [member.fullName, member.memberNumber, member.email, member.status]);
+  return filterText(domain, f.q, (member) => [member.fullName, member.memberNumber, member.email, member.status]);
 }
 
 export async function getMemberById(id: string) {
@@ -247,10 +254,15 @@ export async function getUsers() {
   return rows.map((user) => dbUserToDomain(user, [], undefined));
 }
 
-export async function getOperationsData() {
+export async function getOperationsData(options?: { audit?: boolean }) {
   const db = getDb();
   const user = await getCurrentUser();
   const canReadLocation = hasAnyPermission(user, ["location:read", "*"]);
+  // Registrar la consulta del mapa/historial de ubicaciones (dato sensible).
+  // Solo cuando se accede a la vista operativa (no en cada render del dashboard).
+  if (options?.audit && canReadLocation) {
+    await writeAuditLog({ actorId: user.id, action: "geolocation.map_view", entityType: "delegate_location_ping", entityId: "map" });
+  }
   const [commissionRows, settingRows, pingRows, userRows] = await Promise.all([
     db.select().from(schema.fieldCommissions).orderBy(desc(schema.fieldCommissions.scheduledAt)),
     db.select().from(schema.locationTrackingSettings),
@@ -337,7 +349,20 @@ export async function getAssistantData() {
     db.select().from(schema.aiMessages).orderBy(desc(schema.aiMessages.createdAt)),
   ]);
   // El historial IA se limita al propio usuario salvo roles de supervision.
-  const conversationRows = canOversee ? allConversationRows : allConversationRows.filter((conversation) => conversation.userId === user.id);
+  const scopedByUser = canOversee ? allConversationRows : allConversationRows.filter((conversation) => conversation.userId === user.id);
+  // Ademas, las conversaciones ligadas a un caso heredan el permiso del caso:
+  // no se muestran si el usuario no puede acceder al caso relacionado.
+  const linkedCaseIds = Array.from(new Set(scopedByUser.map((conversation) => conversation.relatedCaseId).filter((value): value is string => Boolean(value))));
+  const accessibleCaseIds = new Set<string>();
+  if (linkedCaseIds.length) {
+    const caseRows = await db.select().from(schema.cases).where(inArray(schema.cases.id, linkedCaseIds));
+    for (const record of caseRows) {
+      if (canAccessCase(user, dbCaseToDomain(record))) {
+        accessibleCaseIds.add(record.id);
+      }
+    }
+  }
+  const conversationRows = scopedByUser.filter((conversation) => !conversation.relatedCaseId || accessibleCaseIds.has(conversation.relatedCaseId));
   return {
     providerConfigs: providerRows.map(dbProviderToDomain),
     prompts: promptRows.map(dbPromptToDomain),

@@ -21,16 +21,26 @@ type PdfMeta = {
   orgName?: string;
   generatedBy?: string;
   filters?: string;
+  logoDataUrl?: string;
 };
 
 export function buildInstitutionalPdf(title: string, rows: Array<Record<string, unknown>>, meta: PdfMeta = {}) {
   const doc = new jsPDF();
   const pageHeight = doc.internal.pageSize.getHeight();
-  const maxWidth = doc.internal.pageSize.getWidth() - 28;
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const maxWidth = pageWidth - 28;
   const lineHeight = 7;
   const bottomMargin = 16;
 
   const header = () => {
+    if (meta.logoDataUrl) {
+      try {
+        const format = meta.logoDataUrl.includes("image/png") ? "PNG" : "JPEG";
+        doc.addImage(meta.logoDataUrl, format, pageWidth - 40, 10, 26, 26);
+      } catch {
+        // Si el logo no se puede incrustar, el encabezado sigue con el texto.
+      }
+    }
     if (meta.orgName) {
       doc.setFontSize(11);
       doc.text(meta.orgName, 14, 14);

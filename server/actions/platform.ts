@@ -2,13 +2,16 @@
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, lt, sql, type SQL } from "drizzle-orm";
 import * as schema from "@/drizzle/schema";
 import { runAssistant } from "@/lib/ai/adapters";
 import { normalizeSearch } from "@/lib/utils";
 import {
+  aiFeedbackSchema,
   aiRunSchema,
   caseFormSchema,
+  credentialActionSchema,
+  locationPurgeSchema,
   casePersonSchema,
   caseStatusUpdateSchema,
   caseTimelineActionSchema,
@@ -30,13 +33,14 @@ import {
 import { writeAuditLog } from "@/server/audit/log";
 import { getDb } from "@/server/db";
 import { canAccessTerritory, hasAnyPermission } from "@/server/permissions/rbac";
-import { getCurrentUser } from "@/server/queries/app";
+import { getCaseById, getCommissionById, getCurrentUser, getEventById, getMemberById } from "@/server/queries/app";
 import type { User } from "@/lib/types";
 
 type ActionResult = {
   ok: boolean;
   message: string;
   output?: string;
+  runId?: string;
 };
 
 const DENIED: ActionResult = { ok: false, message: "No tienes permiso para realizar esta accion." };
@@ -479,18 +483,60 @@ export async function runAssistantAction(_: ActionResult | null, formData: FormD
     updatedAt: row.updatedAt.toISOString(),
   };
 
-  const result = await runAssistant({
-    prompt,
-    message: parsed.data.message,
-    context: {
-      usuario: user.name,
-      rol: user.roles.join(", "),
-      territorio: user.territoryId,
-      relatedCaseId: parsed.data.relatedCaseId,
-      relatedEventId: parsed.data.relatedEventId,
-      fieldCommissionId: parsed.data.fieldCommissionId,
-    },
-  });
+  // Contexto permitido por rol y territorio: se inyecta el contenido real de la
+  // entidad relacionada (caso/evento/comision). getCaseById/getEventById/
+  // getCommissionById ya aplican el control de acceso; si el usuario no puede
+  // acceder, se rechaza la solicitud en vez de filtrar datos.
+  const context: Record<string, unknown> = {
+    usuario: user.name,
+    rol: user.roles.join(", "),
+    territorio: user.territoryId,
+  };
+  if (parsed.data.relatedCaseId) {
+    const record = await getCaseById(parsed.data.relatedCaseId);
+    if (!record) {
+      return { ok: false, message: "No tienes acceso al caso relacionado." };
+    }
+    context.caso = {
+      numero: record.caseNumber,
+      titulo: record.title,
+      categoria: record.category,
+      prioridad: record.priority,
+      estado: record.status,
+      descripcion: record.description,
+      acciones: record.actions.map((action) => ({ tipo: action.actionType, descripcion: action.description, vence: action.dueDate })),
+      personas: record.persons.map((person) => ({ tipo: person.personType, consentimiento: person.consentStatus })),
+    };
+  }
+  if (parsed.data.relatedEventId) {
+    const record = await getEventById(parsed.data.relatedEventId);
+    if (!record) {
+      return { ok: false, message: "No tienes acceso al evento relacionado." };
+    }
+    context.evento = {
+      titulo: record.title,
+      tipo: record.eventType,
+      objetivo: record.objective,
+      instituciones: record.institutions,
+      indicadores: record.indicators,
+      resumen: record.impactSummary,
+    };
+  }
+  if (parsed.data.fieldCommissionId) {
+    const record = await getCommissionById(parsed.data.fieldCommissionId);
+    if (!record) {
+      return { ok: false, message: "No tienes acceso a la comision relacionada." };
+    }
+    context.comision = {
+      titulo: record.title,
+      tipo: record.commissionType,
+      estado: record.status,
+      descripcion: record.description,
+      programada: record.scheduledAt,
+    };
+  }
+
+  const result = await runAssistant({ prompt, message: parsed.data.message, context });
 
   await writeAuditLog({
     actorId: user.id,
@@ -500,7 +546,13 @@ export async function runAssistantAction(_: ActionResult | null, formData: FormD
     after: { provider: result.provider, model: result.model, status: result.status },
   });
 
+  // Un proveedor deshabilitado no genera conversacion: se informa el error claro.
+  if (result.status === "disabled") {
+    return { ok: false, message: result.output };
+  }
+
   const conversationId = crypto.randomUUID();
+  const runId = crypto.randomUUID();
   await db.insert(schema.aiConversations).values({
     id: conversationId,
     userId: user.id,
@@ -516,6 +568,7 @@ export async function runAssistantAction(_: ActionResult | null, formData: FormD
     { conversationId, role: "assistant", content: result.output, metadata: { provider: result.provider, model: result.model } },
   ]);
   await db.insert(schema.aiRuns).values({
+    id: runId,
     conversationId,
     promptTemplateId: prompt.id,
     input: { message: parsed.data.message },
@@ -525,7 +578,32 @@ export async function runAssistantAction(_: ActionResult | null, formData: FormD
     status: result.status,
   });
 
-  return { ok: true, message: `Respuesta generada con ${result.provider}/${result.model}.`, output: result.output };
+  const note = result.status === "simulated" ? " (modo local sin credenciales)" : result.status === "blocked" ? " (bloqueado por politica)" : "";
+  return { ok: true, message: `Respuesta generada con ${result.provider}/${result.model}${note}.`, output: result.output, runId };
+}
+
+export async function submitAiFeedbackAction(_: ActionResult | null, formData: FormData): Promise<ActionResult> {
+  const user = await getCurrentUser();
+  if (!can(user, ["ai:use", "ai:admin"])) {
+    return DENIED;
+  }
+  const parsed = aiFeedbackSchema.safeParse(Object.fromEntries(formData));
+  if (!parsed.success) {
+    return { ok: false, message: parsed.error.issues[0]?.message ?? "Calificacion invalida." };
+  }
+  const db = getDb();
+  const [run] = await db.select({ id: schema.aiRuns.id }).from(schema.aiRuns).where(eq(schema.aiRuns.id, parsed.data.aiRunId)).limit(1);
+  if (!run) {
+    return { ok: false, message: "No se encontro la respuesta a calificar." };
+  }
+  await db.insert(schema.aiFeedback).values({
+    aiRunId: parsed.data.aiRunId,
+    userId: user.id,
+    rating: parsed.data.rating,
+    comment: parsed.data.comment,
+  });
+  await writeAuditLog({ actorId: user.id, action: "ai.feedback", entityType: "ai_run", entityId: parsed.data.aiRunId, after: { rating: parsed.data.rating } });
+  return { ok: true, message: "Gracias, tu calificacion quedo registrada." };
 }
 
 export async function savePromptAction(_: ActionResult | null, formData: FormData): Promise<ActionResult> {
@@ -851,6 +929,94 @@ export async function exportReportAction(formData: FormData) {
     after: { format: formData.get("format") },
   });
   return { ok: true, message: "Reporte marcado para exportacion. Los endpoints CSV/XLSX/PDF estan disponibles por tipo de reporte." };
+}
+
+// --------------------------------------------------------------------------
+// Credencial QR: revocar / renovar / suspender
+// --------------------------------------------------------------------------
+export async function updateCredentialAction(_: ActionResult | null, formData: FormData): Promise<ActionResult> {
+  const user = await getCurrentUser();
+  if (!can(user, ["write:territory", "*"])) {
+    return DENIED;
+  }
+  const parsed = credentialActionSchema.safeParse(Object.fromEntries(formData));
+  if (!parsed.success) {
+    return { ok: false, message: parsed.error.issues[0]?.message ?? "Solicitud invalida." };
+  }
+  // getMemberById aplica el alcance territorial: si no hay acceso, no continua.
+  const member = await getMemberById(parsed.data.memberId);
+  if (!member) {
+    return { ok: false, message: "No tienes acceso a este miembro." };
+  }
+  const db = getDb();
+  const [credential] = await db.select().from(schema.memberCredentials).where(eq(schema.memberCredentials.memberId, parsed.data.memberId)).limit(1);
+  if (!credential) {
+    return { ok: false, message: "El miembro no tiene credencial emitida." };
+  }
+  if (parsed.data.action === "revoke") {
+    await db.update(schema.memberCredentials).set({ status: "revocada" }).where(eq(schema.memberCredentials.id, credential.id));
+    await writeAuditLog({ actorId: user.id, action: "credential.revoke", entityType: "member_credential", entityId: credential.id, before: { status: credential.status }, after: { status: "revocada" } });
+    revalidatePath(`/miembros/${parsed.data.memberId}`);
+    return { ok: true, message: "Credencial revocada." };
+  }
+  if (parsed.data.action === "suspend") {
+    await db.update(schema.memberCredentials).set({ status: "suspendida" }).where(eq(schema.memberCredentials.id, credential.id));
+    await writeAuditLog({ actorId: user.id, action: "credential.suspend", entityType: "member_credential", entityId: credential.id, before: { status: credential.status }, after: { status: "suspendida" } });
+    revalidatePath(`/miembros/${parsed.data.memberId}`);
+    return { ok: true, message: "Credencial suspendida." };
+  }
+  // renew: reactiva, extiende vigencia un anio y rota el token QR.
+  await db.update(schema.memberCredentials).set({
+    status: "activa",
+    qrToken: crypto.randomUUID(),
+    issuedAt: new Date(),
+    expiresAt: new Date(nextYear()),
+  }).where(eq(schema.memberCredentials.id, credential.id));
+  await writeAuditLog({ actorId: user.id, action: "credential.renew", entityType: "member_credential", entityId: credential.id, before: { status: credential.status }, after: { status: "activa" } });
+  revalidatePath(`/miembros/${parsed.data.memberId}`);
+  return { ok: true, message: "Credencial renovada por un anio." };
+}
+
+// --------------------------------------------------------------------------
+// Borrado administrativo manual de historial de ubicacion (politica interna)
+// --------------------------------------------------------------------------
+export async function purgeLocationHistoryAction(_: ActionResult | null, formData: FormData): Promise<ActionResult> {
+  const user = await getCurrentUser();
+  if (!can(user, ["write:config", "*"]) || !can(user, ["location:read", "*"])) {
+    return DENIED;
+  }
+  const parsed = locationPurgeSchema.safeParse(Object.fromEntries(formData));
+  if (!parsed.success) {
+    return { ok: false, message: parsed.error.issues[0]?.message ?? "Solicitud invalida." };
+  }
+  const db = getDb();
+  const conditions: SQL[] = [];
+  if (parsed.data.scope === "territory") {
+    if (!parsed.data.territoryId) {
+      return { ok: false, message: "Selecciona el territorio a purgar." };
+    }
+    conditions.push(eq(schema.delegateLocationPings.territoryId, parsed.data.territoryId));
+  }
+  if (parsed.data.scope === "user") {
+    if (!parsed.data.userId) {
+      return { ok: false, message: "Selecciona el usuario a purgar." };
+    }
+    conditions.push(eq(schema.delegateLocationPings.userId, parsed.data.userId));
+  }
+  if (parsed.data.before) {
+    conditions.push(lt(schema.delegateLocationPings.capturedAt, new Date(parsed.data.before)));
+  }
+  const result = await db.delete(schema.delegateLocationPings).where(conditions.length ? and(...conditions) : undefined).returning({ id: schema.delegateLocationPings.id });
+  await writeAuditLog({
+    actorId: user.id,
+    action: "geolocation.manual_purge",
+    entityType: "delegate_location_ping",
+    entityId: "bulk",
+    after: { scope: parsed.data.scope, territoryId: parsed.data.territoryId, userId: parsed.data.userId, before: parsed.data.before, deleted: result.length },
+  });
+  revalidatePath("/configuracion");
+  revalidatePath("/operacion-territorial/geolocalizacion");
+  return { ok: true, message: `Se eliminaron ${result.length} registros de ubicacion.` };
 }
 
 function nextYear() {
