@@ -15,7 +15,8 @@
     "db:push": "drizzle-kit push",
     "db:migrate": "node --import tsx drizzle/migrate.ts",
     "db:seed": "node --import tsx drizzle/seed.ts",
-    "vercel-build": "npm run db:migrate && next build",
+    "db:setup": "npm run db:migrate && npm run db:seed",
+    "vercel-build": "npm run db:migrate && npm run db:seed && next build",
     "test": "vitest run"
   },
   "dependencies": {
