@@ -33,6 +33,7 @@ export type User = {
   status: "active" | "disabled" | "pending";
   roles: RoleKey[];
   territoryId?: string;
+  passwordHash?: string;
 };
 
 export type Member = {

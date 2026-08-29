@@ -3,11 +3,12 @@ import { DataTable } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { BarSummary, LineSummary } from "@/components/charts/dashboard-charts";
 import { LeafletMap } from "@/components/maps/leaflet-map";
-import { getDashboardData, getTerritories, getTerritoryName } from "@/server/queries/app";
+import { getCurrentUser, getDashboardData, getTerritories, getTerritoryName } from "@/server/queries/app";
 import { formatDate, formatDateTime } from "@/lib/utils";
 
 export default async function DashboardPage() {
-  const data = await getDashboardData();
+  const user = await getCurrentUser();
+  const data = await getDashboardData(user);
   const territories = await getTerritories();
 
   return (

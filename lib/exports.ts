@@ -19,13 +19,39 @@ export function toXlsxBuffer(sheetName: string, rows: Array<Record<string, unkno
 
 export function buildInstitutionalPdf(title: string, rows: Array<Record<string, unknown>>) {
   const doc = new jsPDF();
-  doc.setFontSize(16);
-  doc.text(title, 14, 18);
-  doc.setFontSize(10);
-  doc.text(`Generado: ${new Date().toLocaleString("es-MX")}`, 14, 27);
-  doc.text("Filtros aplicados: segun seleccion de usuario autorizado", 14, 34);
-  rows.slice(0, 24).forEach((row, index) => {
-    doc.text(Object.entries(row).map(([key, value]) => `${key}: ${value}`).join(" | ").slice(0, 110), 14, 46 + index * 7);
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const bottomMargin = 16;
+  const lineHeight = 7;
+  const maxWidth = doc.internal.pageSize.getWidth() - 28;
+
+  const header = () => {
+    doc.setFontSize(16);
+    doc.text(title, 14, 18);
+    doc.setFontSize(10);
+    doc.text(`Generado: ${new Date().toLocaleString("es-MX")}`, 14, 27);
+    doc.text("Filtros aplicados: segun seleccion de usuario autorizado", 14, 34);
+  };
+
+  header();
+  let y = 46;
+
+  rows.forEach((row) => {
+    const text = Object.entries(row)
+      .map(([key, value]) => `${key}: ${value ?? ""}`)
+      .join(" | ");
+    // Envuelve el texto en varias lineas en vez de recortarlo.
+    const lines = doc.splitTextToSize(text, maxWidth) as string[];
+    for (const line of lines) {
+      if (y > pageHeight - bottomMargin) {
+        doc.addPage();
+        header();
+        y = 46;
+      }
+      doc.text(line, 14, y);
+      y += lineHeight;
+    }
+    y += 1;
   });
+
   return Buffer.from(doc.output("arraybuffer"));
 }

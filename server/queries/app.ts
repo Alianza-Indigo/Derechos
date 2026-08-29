@@ -17,11 +17,20 @@ import {
   territories,
   users,
 } from "@/lib/mock-data";
+import { getServerSession } from "next-auth";
+import { redirect } from "next/navigation";
 import type { HumanRightsCase, Member, User } from "@/lib/types";
+import { authOptions } from "@/server/auth/options";
 import { canAccessCase, canAccessTerritory } from "@/server/permissions/rbac";
 
 export async function getCurrentUser(): Promise<User> {
-  return users[0];
+  const session = await getServerSession(authOptions);
+  const email = session?.user?.email;
+  const user = email ? users.find((item) => item.email.toLowerCase() === email.toLowerCase()) : undefined;
+  if (!user) {
+    redirect("/login");
+  }
+  return user;
 }
 
 export async function getDashboardData(user = users[0]) {
