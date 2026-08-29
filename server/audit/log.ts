@@ -1,4 +1,5 @@
-import { auditLogs } from "@/lib/mock-data";
+import { auditLogs } from "@/drizzle/schema";
+import { getDb } from "@/server/db";
 
 type AuditInput = {
   actorId?: string;
@@ -11,15 +12,14 @@ type AuditInput = {
 };
 
 export async function writeAuditLog(input: AuditInput) {
-  auditLogs.unshift({
-    id: `audit_runtime_${crypto.randomUUID()}`,
-    actorId: input.actorId ?? "system",
+  const db = getDb();
+  await db.insert(auditLogs).values({
+    actorId: input.actorId ?? null,
     action: input.action,
     entityType: input.entityType,
     entityId: input.entityId,
-    before: input.before,
-    after: input.after,
-    ip: input.ip,
-    createdAt: new Date().toISOString(),
+    before: input.before ?? null,
+    after: input.after ?? null,
+    ip: input.ip ?? null,
   });
 }

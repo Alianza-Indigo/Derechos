@@ -14,29 +14,29 @@ CREATE TYPE "public"."member_status" AS ENUM('pendiente', 'activo', 'suspendido'
 CREATE TYPE "public"."territory_type" AS ENUM('country', 'state', 'city');--> statement-breakpoint
 CREATE TYPE "public"."user_status" AS ENUM('active', 'disabled', 'pending');--> statement-breakpoint
 CREATE TABLE "ai_conversations" (
-	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
-	"user_id" uuid NOT NULL,
-	"related_case_id" uuid,
-	"related_event_id" uuid,
-	"field_commission_id" uuid,
-	"prompt_template_id" uuid NOT NULL,
+	"id" text PRIMARY KEY NOT NULL,
+	"user_id" text NOT NULL,
+	"related_case_id" text,
+	"related_event_id" text,
+	"field_commission_id" text,
+	"prompt_template_id" text NOT NULL,
 	"title" text NOT NULL,
 	"status" text DEFAULT 'activa' NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
 CREATE TABLE "ai_feedback" (
-	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
-	"ai_run_id" uuid NOT NULL,
-	"user_id" uuid NOT NULL,
+	"id" text PRIMARY KEY NOT NULL,
+	"ai_run_id" text NOT NULL,
+	"user_id" text NOT NULL,
 	"rating" integer NOT NULL,
 	"comment" text,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
 CREATE TABLE "ai_messages" (
-	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
-	"conversation_id" uuid NOT NULL,
+	"id" text PRIMARY KEY NOT NULL,
+	"conversation_id" text NOT NULL,
 	"role" "ai_message_role" NOT NULL,
 	"content" text NOT NULL,
 	"metadata_json" jsonb DEFAULT '{}'::jsonb NOT NULL,
@@ -44,7 +44,7 @@ CREATE TABLE "ai_messages" (
 );
 --> statement-breakpoint
 CREATE TABLE "ai_prompt_templates" (
-	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"id" text PRIMARY KEY NOT NULL,
 	"key" text NOT NULL,
 	"name" text NOT NULL,
 	"description" text NOT NULL,
@@ -57,26 +57,26 @@ CREATE TABLE "ai_prompt_templates" (
 	"temperature" numeric(3, 2) DEFAULT '0.30' NOT NULL,
 	"enabled" boolean DEFAULT true NOT NULL,
 	"version" integer DEFAULT 1 NOT NULL,
-	"updated_by" uuid NOT NULL,
+	"updated_by" text NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
 CREATE TABLE "ai_provider_configs" (
-	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"id" text PRIMARY KEY NOT NULL,
 	"provider_key" "ai_provider_key" NOT NULL,
 	"display_name" text NOT NULL,
 	"enabled" boolean DEFAULT false NOT NULL,
 	"default_model" text NOT NULL,
 	"encrypted_api_key_ref" text NOT NULL,
 	"priority" integer DEFAULT 10 NOT NULL,
-	"updated_by" uuid NOT NULL,
+	"updated_by" text NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
 CREATE TABLE "ai_runs" (
-	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
-	"conversation_id" uuid NOT NULL,
-	"prompt_template_id" uuid NOT NULL,
+	"id" text PRIMARY KEY NOT NULL,
+	"conversation_id" text NOT NULL,
+	"prompt_template_id" text NOT NULL,
 	"input_json" jsonb DEFAULT '{}'::jsonb NOT NULL,
 	"output_text" text,
 	"model" text NOT NULL,
@@ -87,8 +87,8 @@ CREATE TABLE "ai_runs" (
 );
 --> statement-breakpoint
 CREATE TABLE "audit_logs" (
-	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
-	"actor_id" uuid,
+	"id" text PRIMARY KEY NOT NULL,
+	"actor_id" text,
 	"action" text NOT NULL,
 	"entity_type" text NOT NULL,
 	"entity_id" text NOT NULL,
@@ -99,29 +99,29 @@ CREATE TABLE "audit_logs" (
 );
 --> statement-breakpoint
 CREATE TABLE "case_actions" (
-	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
-	"case_id" uuid NOT NULL,
+	"id" text PRIMARY KEY NOT NULL,
+	"case_id" text NOT NULL,
 	"action_type" text NOT NULL,
 	"description" text NOT NULL,
 	"due_date" timestamp with time zone,
 	"completed_at" timestamp with time zone,
-	"created_by" uuid NOT NULL,
+	"created_by" text NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
 CREATE TABLE "case_evidence" (
-	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
-	"case_id" uuid NOT NULL,
+	"id" text PRIMARY KEY NOT NULL,
+	"case_id" text NOT NULL,
 	"file_url" text NOT NULL,
 	"file_type" text NOT NULL,
 	"description" text NOT NULL,
-	"uploaded_by" uuid NOT NULL,
+	"uploaded_by" text NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
 CREATE TABLE "case_people" (
-	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
-	"case_id" uuid NOT NULL,
+	"id" text PRIMARY KEY NOT NULL,
+	"case_id" text NOT NULL,
 	"person_type" text NOT NULL,
 	"name" text NOT NULL,
 	"contact" text NOT NULL,
@@ -130,28 +130,29 @@ CREATE TABLE "case_people" (
 );
 --> statement-breakpoint
 CREATE TABLE "cases" (
-	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"id" text PRIMARY KEY NOT NULL,
 	"case_number" text NOT NULL,
 	"title" text NOT NULL,
 	"description" text NOT NULL,
 	"category" text NOT NULL,
 	"priority" "case_priority" DEFAULT 'Media' NOT NULL,
 	"status" "case_status" DEFAULT 'Nuevo' NOT NULL,
-	"territory_id" uuid NOT NULL,
-	"opened_by" uuid NOT NULL,
-	"assigned_to" uuid NOT NULL,
+	"territory_id" text NOT NULL,
+	"opened_by" text NOT NULL,
+	"assigned_to" text NOT NULL,
 	"opened_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"closed_at" timestamp with time zone,
 	"due_date" timestamp with time zone,
+	"internal_notes_json" jsonb DEFAULT '[]'::jsonb NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
 CREATE TABLE "delegate_location_pings" (
-	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
-	"user_id" uuid NOT NULL,
-	"field_commission_id" uuid,
-	"territory_id" uuid NOT NULL,
+	"id" text PRIMARY KEY NOT NULL,
+	"user_id" text NOT NULL,
+	"field_commission_id" text,
+	"territory_id" text NOT NULL,
 	"latitude" numeric(10, 6) NOT NULL,
 	"longitude" numeric(10, 6) NOT NULL,
 	"accuracy_meters" integer DEFAULT 50 NOT NULL,
@@ -162,8 +163,8 @@ CREATE TABLE "delegate_location_pings" (
 );
 --> statement-breakpoint
 CREATE TABLE "event_evidence" (
-	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
-	"event_id" uuid NOT NULL,
+	"id" text PRIMARY KEY NOT NULL,
+	"event_id" text NOT NULL,
 	"file_url" text NOT NULL,
 	"type" text NOT NULL,
 	"description" text NOT NULL,
@@ -171,15 +172,15 @@ CREATE TABLE "event_evidence" (
 );
 --> statement-breakpoint
 CREATE TABLE "events" (
-	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"id" text PRIMARY KEY NOT NULL,
 	"title" text NOT NULL,
 	"description" text NOT NULL,
 	"event_type" text NOT NULL,
 	"date_start" timestamp with time zone NOT NULL,
 	"date_end" timestamp with time zone NOT NULL,
 	"location" text NOT NULL,
-	"territory_id" uuid NOT NULL,
-	"organizer_id" uuid NOT NULL,
+	"territory_id" text NOT NULL,
+	"organizer_id" text NOT NULL,
 	"attendees_count" integer DEFAULT 0 NOT NULL,
 	"institutions" jsonb DEFAULT '[]'::jsonb NOT NULL,
 	"impact_summary" text NOT NULL,
@@ -189,14 +190,14 @@ CREATE TABLE "events" (
 );
 --> statement-breakpoint
 CREATE TABLE "field_commissions" (
-	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"id" text PRIMARY KEY NOT NULL,
 	"title" text NOT NULL,
 	"commission_type" text NOT NULL,
 	"description" text NOT NULL,
-	"assigned_to" uuid NOT NULL,
-	"territory_id" uuid NOT NULL,
-	"related_case_id" uuid,
-	"related_event_id" uuid,
+	"assigned_to" text NOT NULL,
+	"territory_id" text NOT NULL,
+	"related_case_id" text,
+	"related_event_id" text,
 	"status" "commission_status" DEFAULT 'programada' NOT NULL,
 	"scheduled_at" timestamp with time zone NOT NULL,
 	"completed_at" timestamp with time zone,
@@ -205,21 +206,21 @@ CREATE TABLE "field_commissions" (
 );
 --> statement-breakpoint
 CREATE TABLE "location_tracking_settings" (
-	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
-	"user_id" uuid NOT NULL,
+	"id" text PRIMARY KEY NOT NULL,
+	"user_id" text NOT NULL,
 	"enabled" boolean DEFAULT false NOT NULL,
 	"mode" "location_mode" DEFAULT 'manual_check_in' NOT NULL,
 	"allowed_days_json" jsonb DEFAULT '[]'::jsonb NOT NULL,
 	"allowed_hours_json" jsonb DEFAULT '{"from":"08:00","to":"18:00"}'::jsonb NOT NULL,
 	"retention_days" integer DEFAULT 30 NOT NULL,
 	"disabled_reason" text,
-	"updated_by" uuid NOT NULL,
+	"updated_by" text NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
 CREATE TABLE "member_credentials" (
-	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
-	"member_id" uuid NOT NULL,
+	"id" text PRIMARY KEY NOT NULL,
+	"member_id" text NOT NULL,
 	"qr_token" text NOT NULL,
 	"public_slug" text NOT NULL,
 	"issued_at" timestamp with time zone DEFAULT now() NOT NULL,
@@ -228,16 +229,16 @@ CREATE TABLE "member_credentials" (
 );
 --> statement-breakpoint
 CREATE TABLE "members" (
-	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"id" text PRIMARY KEY NOT NULL,
 	"member_number" text NOT NULL,
-	"user_id" uuid,
+	"user_id" text,
 	"full_name" text NOT NULL,
 	"birth_date" timestamp with time zone,
 	"gender" text NOT NULL,
 	"phone" text NOT NULL,
 	"email" text NOT NULL,
 	"address" text NOT NULL,
-	"territory_id" uuid NOT NULL,
+	"territory_id" text NOT NULL,
 	"status" "member_status" DEFAULT 'pendiente' NOT NULL,
 	"joined_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
@@ -245,7 +246,7 @@ CREATE TABLE "members" (
 );
 --> statement-breakpoint
 CREATE TABLE "organizations" (
-	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"id" text PRIMARY KEY NOT NULL,
 	"name" text NOT NULL,
 	"legal_name" text,
 	"logo_url" text,
@@ -253,13 +254,14 @@ CREATE TABLE "organizations" (
 	"country" text DEFAULT 'Mexico' NOT NULL,
 	"geolocation_enabled" boolean DEFAULT true NOT NULL,
 	"ai_enabled" boolean DEFAULT true NOT NULL,
+	"location_retention_days" integer DEFAULT 30 NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
 CREATE TABLE "prevalence_metrics" (
-	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
-	"study_id" uuid NOT NULL,
+	"id" text PRIMARY KEY NOT NULL,
+	"study_id" text NOT NULL,
 	"indicator_key" text NOT NULL,
 	"label" text NOT NULL,
 	"description" text NOT NULL,
@@ -267,10 +269,10 @@ CREATE TABLE "prevalence_metrics" (
 );
 --> statement-breakpoint
 CREATE TABLE "prevalence_records" (
-	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
-	"study_id" uuid NOT NULL,
-	"metric_id" uuid NOT NULL,
-	"territory_id" uuid NOT NULL,
+	"id" text PRIMARY KEY NOT NULL,
+	"study_id" text NOT NULL,
+	"metric_id" text NOT NULL,
+	"territory_id" text NOT NULL,
 	"value_numeric" numeric(12, 2),
 	"value_text" text,
 	"sample_size" integer,
@@ -280,7 +282,7 @@ CREATE TABLE "prevalence_records" (
 );
 --> statement-breakpoint
 CREATE TABLE "prevalence_studies" (
-	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"id" text PRIMARY KEY NOT NULL,
 	"name" text NOT NULL,
 	"description" text NOT NULL,
 	"methodology" text NOT NULL,
@@ -292,23 +294,23 @@ CREATE TABLE "prevalence_studies" (
 );
 --> statement-breakpoint
 CREATE TABLE "reports" (
-	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"id" text PRIMARY KEY NOT NULL,
 	"title" text NOT NULL,
 	"type" text NOT NULL,
 	"filters_json" jsonb DEFAULT '{}'::jsonb NOT NULL,
-	"created_by" uuid NOT NULL,
+	"created_by" text NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
 CREATE TABLE "roles" (
-	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"id" text PRIMARY KEY NOT NULL,
 	"key" text NOT NULL,
 	"name" text NOT NULL,
 	"description" text NOT NULL
 );
 --> statement-breakpoint
 CREATE TABLE "territories" (
-	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"id" text PRIMARY KEY NOT NULL,
 	"type" "territory_type" NOT NULL,
 	"name" text NOT NULL,
 	"country_code" text NOT NULL,
@@ -316,25 +318,26 @@ CREATE TABLE "territories" (
 	"city_name" text,
 	"latitude" numeric(10, 6) NOT NULL,
 	"longitude" numeric(10, 6) NOT NULL,
-	"parent_id" uuid
+	"parent_id" text
 );
 --> statement-breakpoint
 CREATE TABLE "user_roles" (
-	"user_id" uuid NOT NULL,
-	"role_id" uuid NOT NULL,
+	"user_id" text NOT NULL,
+	"role_id" text NOT NULL,
 	"scope_type" text DEFAULT 'global' NOT NULL,
-	"scope_id" uuid,
+	"scope_id" text,
 	CONSTRAINT "user_roles_user_id_role_id_scope_type_pk" PRIMARY KEY("user_id","role_id","scope_type")
 );
 --> statement-breakpoint
 CREATE TABLE "users" (
-	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"id" text PRIMARY KEY NOT NULL,
 	"name" text NOT NULL,
 	"email" text NOT NULL,
 	"phone" text,
 	"password_hash" text,
 	"provider_id" text,
 	"status" "user_status" DEFAULT 'active' NOT NULL,
+	"territory_id" text,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
 );
@@ -383,6 +386,7 @@ ALTER TABLE "reports" ADD CONSTRAINT "reports_created_by_users_id_fk" FOREIGN KE
 ALTER TABLE "territories" ADD CONSTRAINT "territories_parent_id_territories_id_fk" FOREIGN KEY ("parent_id") REFERENCES "public"."territories"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "user_roles" ADD CONSTRAINT "user_roles_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "user_roles" ADD CONSTRAINT "user_roles_role_id_roles_id_fk" FOREIGN KEY ("role_id") REFERENCES "public"."roles"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "users" ADD CONSTRAINT "users_territory_id_territories_id_fk" FOREIGN KEY ("territory_id") REFERENCES "public"."territories"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 CREATE UNIQUE INDEX "ai_prompt_templates_key_version_idx" ON "ai_prompt_templates" USING btree ("key","version");--> statement-breakpoint
 CREATE UNIQUE INDEX "ai_provider_configs_provider_idx" ON "ai_provider_configs" USING btree ("provider_key");--> statement-breakpoint
 CREATE UNIQUE INDEX "cases_case_number_idx" ON "cases" USING btree ("case_number");--> statement-breakpoint

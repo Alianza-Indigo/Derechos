@@ -1,3 +1,6 @@
+// Dataset semilla de la plataforma. NO se sirve en memoria en tiempo de
+// ejecucion: la aplicacion lee de Postgres. Este modulo es la fuente de datos
+// que `drizzle/seed.ts` inserta en la base y que usan las pruebas.
 import { aiProviders } from "@/lib/constants";
 import type {
   AiConversation,

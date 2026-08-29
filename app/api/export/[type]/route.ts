@@ -1,18 +1,40 @@
 import { NextRequest, NextResponse } from "next/server";
 import { buildInstitutionalPdf, toCsv, toXlsxBuffer } from "@/lib/exports";
-import { cases, events, members, prevalenceRecords } from "@/lib/mock-data";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/server/auth/options";
+import { getPrevalenceData, listCases, listEvents, listMembers } from "@/server/queries/app";
 
-const sources: Record<string, Array<Record<string, unknown>>> = {
-  members: members.map(({ id, memberNumber, fullName, status, joinedAt, territoryId }) => ({ id, memberNumber, fullName, status, joinedAt, territoryId })),
-  cases: cases.map(({ id, caseNumber, title, category, priority, status, territoryId }) => ({ id, caseNumber, title, category, priority, status, territoryId })),
-  events: events.map(({ id, title, eventType, dateStart, attendeesCount, territoryId }) => ({ id, title, eventType, dateStart, attendeesCount, territoryId })),
-  prevalence: prevalenceRecords.map(({ id, metricId, territoryId, valueNumeric, sampleSize, source, measuredAt }) => ({ id, metricId, territoryId, valueNumeric, sampleSize, source, measuredAt })),
-};
+async function buildRows(type: string): Promise<Array<Record<string, unknown>>> {
+  switch (type) {
+    case "cases": {
+      const rows = await listCases();
+      return rows.map(({ id, caseNumber, title, category, priority, status, territoryId }) => ({ id, caseNumber, title, category, priority, status, territoryId }));
+    }
+    case "events": {
+      const rows = await listEvents();
+      return rows.map(({ id, title, eventType, dateStart, attendeesCount, territoryId }) => ({ id, title, eventType, dateStart, attendeesCount, territoryId }));
+    }
+    case "prevalence": {
+      const { records } = await getPrevalenceData();
+      return records.map(({ id, metricId, territoryId, valueNumeric, sampleSize, source, measuredAt }) => ({ id, metricId, territoryId, valueNumeric, sampleSize, source, measuredAt }));
+    }
+    case "members":
+    default: {
+      const rows = await listMembers();
+      return rows.map(({ id, memberNumber, fullName, status, joinedAt, territoryId }) => ({ id, memberNumber, fullName, status, joinedAt, territoryId }));
+    }
+  }
+}
 
 export async function GET(request: NextRequest, { params }: { params: Promise<{ type: string }> }) {
+  const session = await getServerSession(authOptions);
+  if (!session?.user) {
+    return new NextResponse("No autorizado", { status: 401 });
+  }
+
   const { type } = await params;
   const format = request.nextUrl.searchParams.get("format") ?? "csv";
-  const rows = sources[type] ?? sources.members;
+  const rows = await buildRows(type);
 
   if (format === "xlsx") {
     return new NextResponse(new Uint8Array(toXlsxBuffer(type, rows)), {

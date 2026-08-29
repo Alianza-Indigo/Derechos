@@ -6,9 +6,19 @@ declare global {
   var __derechosSql: ReturnType<typeof postgres> | undefined;
 }
 
-export function getDb() {
+export type Database = ReturnType<typeof drizzle<typeof schema>>;
+
+let cachedDb: Database | undefined;
+
+export function getDb(): Database {
+  if (cachedDb) {
+    return cachedDb;
+  }
+
   if (!process.env.DATABASE_URL) {
-    return null;
+    throw new Error(
+      "DATABASE_URL no esta configurada. Define la conexion Postgres (ver .env.example) antes de iniciar la aplicacion.",
+    );
   }
 
   const client =
@@ -22,5 +32,6 @@ export function getDb() {
     globalThis.__derechosSql = client;
   }
 
-  return drizzle(client, { schema });
+  cachedDb = drizzle(client, { schema });
+  return cachedDb;
 }

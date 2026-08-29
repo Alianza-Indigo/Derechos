@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import {
   boolean,
   type AnyPgColumn,
@@ -10,10 +11,9 @@ import {
   text,
   timestamp,
   uniqueIndex,
-  uuid,
 } from "drizzle-orm/pg-core";
 
-const id = (name = "id") => uuid(name).defaultRandom().primaryKey();
+const id = (name = "id") => text(name).primaryKey().$defaultFn(() => randomUUID());
 const createdAt = timestamp("created_at", { withTimezone: true }).defaultNow().notNull();
 const updatedAt = timestamp("updated_at", { withTimezone: true }).defaultNow().notNull();
 
@@ -51,6 +51,7 @@ export const organizations = pgTable("organizations", {
   country: text("country").default("Mexico").notNull(),
   geolocationEnabled: boolean("geolocation_enabled").default(true).notNull(),
   aiEnabled: boolean("ai_enabled").default(true).notNull(),
+  locationRetentionDays: integer("location_retention_days").default(30).notNull(),
   createdAt,
   updatedAt,
 });
@@ -63,6 +64,7 @@ export const users = pgTable("users", {
   passwordHash: text("password_hash"),
   providerId: text("provider_id"),
   status: userStatusEnum("status").default("active").notNull(),
+  territoryId: text("territory_id").references((): AnyPgColumn => territories.id),
   createdAt,
   updatedAt,
 }, (table) => ({
@@ -87,14 +89,14 @@ export const territories = pgTable("territories", {
   cityName: text("city_name"),
   latitude: numeric("latitude", { precision: 10, scale: 6 }).notNull(),
   longitude: numeric("longitude", { precision: 10, scale: 6 }).notNull(),
-  parentId: uuid("parent_id").references((): AnyPgColumn => territories.id),
+  parentId: text("parent_id").references((): AnyPgColumn => territories.id),
 });
 
 export const userRoles = pgTable("user_roles", {
-  userId: uuid("user_id").references(() => users.id).notNull(),
-  roleId: uuid("role_id").references(() => roles.id).notNull(),
+  userId: text("user_id").references(() => users.id).notNull(),
+  roleId: text("role_id").references(() => roles.id).notNull(),
   scopeType: text("scope_type").default("global").notNull(),
-  scopeId: uuid("scope_id"),
+  scopeId: text("scope_id"),
 }, (table) => ({
   pk: primaryKey({ columns: [table.userId, table.roleId, table.scopeType] }),
 }));
@@ -102,14 +104,14 @@ export const userRoles = pgTable("user_roles", {
 export const members = pgTable("members", {
   id: id(),
   memberNumber: text("member_number").notNull(),
-  userId: uuid("user_id").references(() => users.id),
+  userId: text("user_id").references(() => users.id),
   fullName: text("full_name").notNull(),
   birthDate: timestamp("birth_date", { withTimezone: true }),
   gender: text("gender").notNull(),
   phone: text("phone").notNull(),
   email: text("email").notNull(),
   address: text("address").notNull(),
-  territoryId: uuid("territory_id").references(() => territories.id).notNull(),
+  territoryId: text("territory_id").references(() => territories.id).notNull(),
   status: memberStatusEnum("status").default("pendiente").notNull(),
   joinedAt: timestamp("joined_at", { withTimezone: true }).defaultNow().notNull(),
   createdAt,
@@ -120,7 +122,7 @@ export const members = pgTable("members", {
 
 export const memberCredentials = pgTable("member_credentials", {
   id: id(),
-  memberId: uuid("member_id").references(() => members.id).notNull(),
+  memberId: text("member_id").references(() => members.id).notNull(),
   qrToken: text("qr_token").notNull(),
   publicSlug: text("public_slug").notNull(),
   issuedAt: timestamp("issued_at", { withTimezone: true }).defaultNow().notNull(),
@@ -139,12 +141,13 @@ export const cases = pgTable("cases", {
   category: text("category").notNull(),
   priority: casePriorityEnum("priority").default("Media").notNull(),
   status: caseStatusEnum("status").default("Nuevo").notNull(),
-  territoryId: uuid("territory_id").references(() => territories.id).notNull(),
-  openedBy: uuid("opened_by").references(() => users.id).notNull(),
-  assignedTo: uuid("assigned_to").references(() => users.id).notNull(),
+  territoryId: text("territory_id").references(() => territories.id).notNull(),
+  openedBy: text("opened_by").references(() => users.id).notNull(),
+  assignedTo: text("assigned_to").references(() => users.id).notNull(),
   openedAt: timestamp("opened_at", { withTimezone: true }).defaultNow().notNull(),
   closedAt: timestamp("closed_at", { withTimezone: true }),
   dueDate: timestamp("due_date", { withTimezone: true }),
+  internalNotes: jsonb("internal_notes_json").$type<string[]>().default([]).notNull(),
   createdAt,
   updatedAt,
 }, (table) => ({
@@ -153,7 +156,7 @@ export const cases = pgTable("cases", {
 
 export const casePeople = pgTable("case_people", {
   id: id(),
-  caseId: uuid("case_id").references(() => cases.id).notNull(),
+  caseId: text("case_id").references(() => cases.id).notNull(),
   personType: text("person_type").notNull(),
   name: text("name").notNull(),
   contact: text("contact").notNull(),
@@ -163,22 +166,22 @@ export const casePeople = pgTable("case_people", {
 
 export const caseActions = pgTable("case_actions", {
   id: id(),
-  caseId: uuid("case_id").references(() => cases.id).notNull(),
+  caseId: text("case_id").references(() => cases.id).notNull(),
   actionType: text("action_type").notNull(),
   description: text("description").notNull(),
   dueDate: timestamp("due_date", { withTimezone: true }),
   completedAt: timestamp("completed_at", { withTimezone: true }),
-  createdBy: uuid("created_by").references(() => users.id).notNull(),
+  createdBy: text("created_by").references(() => users.id).notNull(),
   createdAt,
 });
 
 export const caseEvidence = pgTable("case_evidence", {
   id: id(),
-  caseId: uuid("case_id").references(() => cases.id).notNull(),
+  caseId: text("case_id").references(() => cases.id).notNull(),
   fileUrl: text("file_url").notNull(),
   fileType: text("file_type").notNull(),
   description: text("description").notNull(),
-  uploadedBy: uuid("uploaded_by").references(() => users.id).notNull(),
+  uploadedBy: text("uploaded_by").references(() => users.id).notNull(),
   createdAt,
 });
 
@@ -190,8 +193,8 @@ export const events = pgTable("events", {
   dateStart: timestamp("date_start", { withTimezone: true }).notNull(),
   dateEnd: timestamp("date_end", { withTimezone: true }).notNull(),
   location: text("location").notNull(),
-  territoryId: uuid("territory_id").references(() => territories.id).notNull(),
-  organizerId: uuid("organizer_id").references(() => users.id).notNull(),
+  territoryId: text("territory_id").references(() => territories.id).notNull(),
+  organizerId: text("organizer_id").references(() => users.id).notNull(),
   attendeesCount: integer("attendees_count").default(0).notNull(),
   institutions: jsonb("institutions").$type<string[]>().default([]).notNull(),
   impactSummary: text("impact_summary").notNull(),
@@ -202,7 +205,7 @@ export const events = pgTable("events", {
 
 export const eventEvidence = pgTable("event_evidence", {
   id: id(),
-  eventId: uuid("event_id").references(() => events.id).notNull(),
+  eventId: text("event_id").references(() => events.id).notNull(),
   fileUrl: text("file_url").notNull(),
   type: text("type").notNull(),
   description: text("description").notNull(),
@@ -223,7 +226,7 @@ export const prevalenceStudies = pgTable("prevalence_studies", {
 
 export const prevalenceMetrics = pgTable("prevalence_metrics", {
   id: id(),
-  studyId: uuid("study_id").references(() => prevalenceStudies.id).notNull(),
+  studyId: text("study_id").references(() => prevalenceStudies.id).notNull(),
   indicatorKey: text("indicator_key").notNull(),
   label: text("label").notNull(),
   description: text("description").notNull(),
@@ -232,9 +235,9 @@ export const prevalenceMetrics = pgTable("prevalence_metrics", {
 
 export const prevalenceRecords = pgTable("prevalence_records", {
   id: id(),
-  studyId: uuid("study_id").references(() => prevalenceStudies.id).notNull(),
-  metricId: uuid("metric_id").references(() => prevalenceMetrics.id).notNull(),
-  territoryId: uuid("territory_id").references(() => territories.id).notNull(),
+  studyId: text("study_id").references(() => prevalenceStudies.id).notNull(),
+  metricId: text("metric_id").references(() => prevalenceMetrics.id).notNull(),
+  territoryId: text("territory_id").references(() => territories.id).notNull(),
   valueNumeric: numeric("value_numeric", { precision: 12, scale: 2 }),
   valueText: text("value_text"),
   sampleSize: integer("sample_size"),
@@ -248,7 +251,7 @@ export const reports = pgTable("reports", {
   title: text("title").notNull(),
   type: text("type").notNull(),
   filters: jsonb("filters_json").$type<Record<string, unknown>>().default({}).notNull(),
-  createdBy: uuid("created_by").references(() => users.id).notNull(),
+  createdBy: text("created_by").references(() => users.id).notNull(),
   createdAt,
 });
 
@@ -257,10 +260,10 @@ export const fieldCommissions = pgTable("field_commissions", {
   title: text("title").notNull(),
   commissionType: text("commission_type").notNull(),
   description: text("description").notNull(),
-  assignedTo: uuid("assigned_to").references(() => users.id).notNull(),
-  territoryId: uuid("territory_id").references(() => territories.id).notNull(),
-  relatedCaseId: uuid("related_case_id").references(() => cases.id),
-  relatedEventId: uuid("related_event_id").references(() => events.id),
+  assignedTo: text("assigned_to").references(() => users.id).notNull(),
+  territoryId: text("territory_id").references(() => territories.id).notNull(),
+  relatedCaseId: text("related_case_id").references(() => cases.id),
+  relatedEventId: text("related_event_id").references(() => events.id),
   status: commissionStatusEnum("status").default("programada").notNull(),
   scheduledAt: timestamp("scheduled_at", { withTimezone: true }).notNull(),
   completedAt: timestamp("completed_at", { withTimezone: true }),
@@ -270,22 +273,22 @@ export const fieldCommissions = pgTable("field_commissions", {
 
 export const locationTrackingSettings = pgTable("location_tracking_settings", {
   id: id(),
-  userId: uuid("user_id").references(() => users.id).notNull(),
+  userId: text("user_id").references(() => users.id).notNull(),
   enabled: boolean("enabled").default(false).notNull(),
   mode: locationModeEnum("mode").default("manual_check_in").notNull(),
   allowedDays: jsonb("allowed_days_json").$type<string[]>().default([]).notNull(),
   allowedHours: jsonb("allowed_hours_json").$type<{ from: string; to: string }>().default({ from: "08:00", to: "18:00" }).notNull(),
   retentionDays: integer("retention_days").default(30).notNull(),
   disabledReason: text("disabled_reason"),
-  updatedBy: uuid("updated_by").references(() => users.id).notNull(),
+  updatedBy: text("updated_by").references(() => users.id).notNull(),
   updatedAt,
 });
 
 export const delegateLocationPings = pgTable("delegate_location_pings", {
   id: id(),
-  userId: uuid("user_id").references(() => users.id).notNull(),
-  fieldCommissionId: uuid("field_commission_id").references(() => fieldCommissions.id),
-  territoryId: uuid("territory_id").references(() => territories.id).notNull(),
+  userId: text("user_id").references(() => users.id).notNull(),
+  fieldCommissionId: text("field_commission_id").references(() => fieldCommissions.id),
+  territoryId: text("territory_id").references(() => territories.id).notNull(),
   latitude: numeric("latitude", { precision: 10, scale: 6 }).notNull(),
   longitude: numeric("longitude", { precision: 10, scale: 6 }).notNull(),
   accuracyMeters: integer("accuracy_meters").default(50).notNull(),
@@ -303,7 +306,7 @@ export const aiProviderConfigs = pgTable("ai_provider_configs", {
   defaultModel: text("default_model").notNull(),
   encryptedApiKeyRef: text("encrypted_api_key_ref").notNull(),
   priority: integer("priority").default(10).notNull(),
-  updatedBy: uuid("updated_by").references(() => users.id).notNull(),
+  updatedBy: text("updated_by").references(() => users.id).notNull(),
   updatedAt,
 }, (table) => ({
   providerIdx: uniqueIndex("ai_provider_configs_provider_idx").on(table.providerKey),
@@ -323,7 +326,7 @@ export const aiPromptTemplates = pgTable("ai_prompt_templates", {
   temperature: numeric("temperature", { precision: 3, scale: 2 }).default("0.30").notNull(),
   enabled: boolean("enabled").default(true).notNull(),
   version: integer("version").default(1).notNull(),
-  updatedBy: uuid("updated_by").references(() => users.id).notNull(),
+  updatedBy: text("updated_by").references(() => users.id).notNull(),
   updatedAt,
 }, (table) => ({
   keyVersionIdx: uniqueIndex("ai_prompt_templates_key_version_idx").on(table.key, table.version),
@@ -331,11 +334,11 @@ export const aiPromptTemplates = pgTable("ai_prompt_templates", {
 
 export const aiConversations = pgTable("ai_conversations", {
   id: id(),
-  userId: uuid("user_id").references(() => users.id).notNull(),
-  relatedCaseId: uuid("related_case_id").references(() => cases.id),
-  relatedEventId: uuid("related_event_id").references(() => events.id),
-  fieldCommissionId: uuid("field_commission_id").references(() => fieldCommissions.id),
-  promptTemplateId: uuid("prompt_template_id").references(() => aiPromptTemplates.id).notNull(),
+  userId: text("user_id").references(() => users.id).notNull(),
+  relatedCaseId: text("related_case_id").references(() => cases.id),
+  relatedEventId: text("related_event_id").references(() => events.id),
+  fieldCommissionId: text("field_commission_id").references(() => fieldCommissions.id),
+  promptTemplateId: text("prompt_template_id").references(() => aiPromptTemplates.id).notNull(),
   title: text("title").notNull(),
   status: text("status").default("activa").notNull(),
   createdAt,
@@ -343,7 +346,7 @@ export const aiConversations = pgTable("ai_conversations", {
 
 export const aiMessages = pgTable("ai_messages", {
   id: id(),
-  conversationId: uuid("conversation_id").references(() => aiConversations.id).notNull(),
+  conversationId: text("conversation_id").references(() => aiConversations.id).notNull(),
   role: aiRoleEnum("role").notNull(),
   content: text("content").notNull(),
   metadata: jsonb("metadata_json").$type<Record<string, unknown>>().default({}).notNull(),
@@ -352,8 +355,8 @@ export const aiMessages = pgTable("ai_messages", {
 
 export const aiRuns = pgTable("ai_runs", {
   id: id(),
-  conversationId: uuid("conversation_id").references(() => aiConversations.id).notNull(),
-  promptTemplateId: uuid("prompt_template_id").references(() => aiPromptTemplates.id).notNull(),
+  conversationId: text("conversation_id").references(() => aiConversations.id).notNull(),
+  promptTemplateId: text("prompt_template_id").references(() => aiPromptTemplates.id).notNull(),
   input: jsonb("input_json").$type<Record<string, unknown>>().default({}).notNull(),
   outputText: text("output_text"),
   model: text("model").notNull(),
@@ -365,8 +368,8 @@ export const aiRuns = pgTable("ai_runs", {
 
 export const aiFeedback = pgTable("ai_feedback", {
   id: id(),
-  aiRunId: uuid("ai_run_id").references(() => aiRuns.id).notNull(),
-  userId: uuid("user_id").references(() => users.id).notNull(),
+  aiRunId: text("ai_run_id").references(() => aiRuns.id).notNull(),
+  userId: text("user_id").references(() => users.id).notNull(),
   rating: integer("rating").notNull(),
   comment: text("comment"),
   createdAt,
@@ -374,7 +377,7 @@ export const aiFeedback = pgTable("ai_feedback", {
 
 export const auditLogs = pgTable("audit_logs", {
   id: id(),
-  actorId: uuid("actor_id").references(() => users.id),
+  actorId: text("actor_id").references(() => users.id),
   action: text("action").notNull(),
   entityType: text("entity_type").notNull(),
   entityId: text("entity_id").notNull(),

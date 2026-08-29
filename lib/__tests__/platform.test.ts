@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { credentialUrl } from "@/lib/qr";
-import { aiProviderConfigs, aiPromptTemplates, members, organization } from "@/lib/mock-data";
+import { aiProviderConfigs, aiPromptTemplates, members, organization } from "@/lib/seed-data";
 import { canAccessTerritory } from "@/server/permissions/rbac";
 
 describe("plataforma derechos humanos", () => {

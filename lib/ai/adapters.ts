@@ -2,8 +2,8 @@ import { anthropic } from "@ai-sdk/anthropic";
 import { google } from "@ai-sdk/google";
 import { openai } from "@ai-sdk/openai";
 import { generateText } from "ai";
-import { aiProviderConfigs } from "@/lib/mock-data";
-import type { AiPromptTemplate } from "@/lib/types";
+import { listProviderConfigs } from "@/server/queries/app";
+import type { AiPromptTemplate, AiProviderConfig } from "@/lib/types";
 
 type RunAssistantInput = {
   prompt: AiPromptTemplate;
@@ -25,7 +25,8 @@ export async function runAssistant({ prompt, message, context }: RunAssistantInp
     };
   }
 
-  const selected = resolveProvider(prompt);
+  const providerConfigs = await listProviderConfigs();
+  const selected = resolveProvider(prompt, providerConfigs);
   const contextText = JSON.stringify(context, null, 2).slice(0, 4000);
   const userPrompt = prompt.userPromptTemplate
     .replaceAll("{{contexto}}", contextText)
@@ -60,10 +61,22 @@ export async function runAssistant({ prompt, message, context }: RunAssistantInp
   };
 }
 
-function resolveProvider(prompt: AiPromptTemplate) {
+function resolveProvider(prompt: AiPromptTemplate, providerConfigs: AiProviderConfig[]) {
   const defaultProvider = process.env.AI_DEFAULT_PROVIDER || "openai";
   const providerKey = prompt.providerKey === "global" ? defaultProvider : prompt.providerKey;
-  const provider = aiProviderConfigs.find((item) => item.providerKey === providerKey) ?? aiProviderConfigs[1];
+  const provider =
+    providerConfigs.find((item) => item.providerKey === providerKey) ??
+    providerConfigs.find((item) => item.providerKey === "openai") ??
+    providerConfigs[0];
+  if (!provider) {
+    return {
+      key: "openai" as const,
+      displayName: "ChatGPT/OpenAI",
+      defaultModel: process.env.AI_DEFAULT_MODEL || "gpt-5-mini",
+      enabled: false,
+      env: "OPENAI_API_KEY",
+    };
+  }
   const env = provider.providerKey === "gemini" ? "GOOGLE_GENERATIVE_AI_API_KEY" : provider.providerKey === "anthropic" ? "ANTHROPIC_API_KEY" : "OPENAI_API_KEY";
   return { ...provider, key: provider.providerKey, env };
 }

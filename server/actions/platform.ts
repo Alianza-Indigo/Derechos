@@ -1,16 +1,18 @@
 "use server";
 
 import { redirect } from "next/navigation";
+import { eq, or } from "drizzle-orm";
 import {
   aiPromptTemplates,
-  allLocationPings,
   cases,
+  casePeople,
+  delegateLocationPings,
   events,
   fieldCommissions,
+  memberCredentials,
   members,
-} from "@/lib/mock-data";
+} from "@/drizzle/schema";
 import { runAssistant } from "@/lib/ai/adapters";
-import { makeId } from "@/lib/utils";
 import {
   aiRunSchema,
   caseFormSchema,
@@ -21,7 +23,8 @@ import {
   promptTemplateSchema,
 } from "@/lib/validators";
 import { writeAuditLog } from "@/server/audit/log";
-import { getCurrentUser, nextCaseNumber, nextMemberNumber } from "@/server/queries/app";
+import { getDb } from "@/server/db";
+import { getCurrentUser, getPromptRecordById, nextCaseNumber, nextMemberNumber } from "@/server/queries/app";
 
 type ActionResult = {
   ok: boolean;
@@ -36,32 +39,42 @@ export async function createMemberAction(_: ActionResult | null, formData: FormD
     return { ok: false, message: parsed.error.issues[0]?.message ?? "Datos invalidos." };
   }
 
-  const duplicate = members.find((member) => member.email === parsed.data.email || member.phone === parsed.data.phone);
-  if (duplicate) {
+  const db = getDb();
+  const duplicate = await db
+    .select({ id: members.id })
+    .from(members)
+    .where(or(eq(members.email, parsed.data.email), eq(members.phone, parsed.data.phone)));
+  if (duplicate.length) {
     return { ok: false, message: "Ya existe un miembro con ese correo o telefono." };
   }
 
-  const id = makeId("m");
   const slug = `credencial-${crypto.randomUUID().slice(0, 8)}`;
-  members.unshift({
-    id,
-    memberNumber: nextMemberNumber(),
-    fullName: parsed.data.fullName,
-    birthDate: parsed.data.birthDate,
-    gender: parsed.data.gender,
-    phone: parsed.data.phone,
-    email: parsed.data.email,
-    address: parsed.data.address,
-    territoryId: parsed.data.territoryId,
-    status: parsed.data.status,
-    joinedAt: new Date().toISOString(),
-    credentialSlug: slug,
-    credentialStatus: parsed.data.status === "activo" ? "activa" : "suspendida",
-    credentialExpiresAt: nextYear(),
+  const [inserted] = await db
+    .insert(members)
+    .values({
+      memberNumber: await nextMemberNumber(),
+      fullName: parsed.data.fullName,
+      birthDate: new Date(parsed.data.birthDate),
+      gender: parsed.data.gender,
+      phone: parsed.data.phone,
+      email: parsed.data.email,
+      address: parsed.data.address,
+      territoryId: parsed.data.territoryId,
+      status: parsed.data.status,
+    })
+    .returning({ id: members.id });
+
+  await db.insert(memberCredentials).values({
+    memberId: inserted.id,
+    qrToken: crypto.randomUUID(),
+    publicSlug: slug,
+    expiresAt: nextYear(),
+    status: parsed.data.status === "activo" ? "activa" : "suspendida",
   });
-  await writeAuditLog({ actorId: user.id, action: "member.create", entityType: "member", entityId: id, after: parsed.data });
+
+  await writeAuditLog({ actorId: user.id, action: "member.create", entityType: "member", entityId: inserted.id, after: parsed.data });
   await writeAuditLog({ actorId: user.id, action: "credential.issue", entityType: "member_credential", entityId: slug, after: { publicSlug: slug } });
-  redirect(`/miembros/${id}`);
+  redirect(`/miembros/${inserted.id}`);
 }
 
 export async function createCaseAction(_: ActionResult | null, formData: FormData): Promise<ActionResult> {
@@ -71,36 +84,34 @@ export async function createCaseAction(_: ActionResult | null, formData: FormDat
     return { ok: false, message: parsed.error.issues[0]?.message ?? "Datos invalidos." };
   }
 
-  const id = makeId("case");
-  cases.unshift({
-    id,
-    caseNumber: nextCaseNumber(),
-    title: parsed.data.title,
-    description: parsed.data.description,
-    category: parsed.data.category,
-    priority: parsed.data.priority,
-    status: parsed.data.status,
-    territoryId: parsed.data.territoryId,
-    openedBy: user.id,
-    assignedTo: parsed.data.assignedTo,
-    openedAt: new Date().toISOString(),
-    dueDate: undefined,
-    persons: [
-      {
-        id: makeId("person"),
-        personType: "solicitante",
-        name: "Persona protegida",
-        contact: "Reservado",
-        demographicData: {},
-        consentStatus: parsed.data.consentStatus,
-      },
-    ],
-    actions: [],
-    evidence: [],
-    internalNotes: ["Caso creado desde formulario institucional."],
+  const db = getDb();
+  const [inserted] = await db
+    .insert(cases)
+    .values({
+      caseNumber: await nextCaseNumber(),
+      title: parsed.data.title,
+      description: parsed.data.description,
+      category: parsed.data.category,
+      priority: parsed.data.priority,
+      status: parsed.data.status,
+      territoryId: parsed.data.territoryId,
+      openedBy: user.id,
+      assignedTo: parsed.data.assignedTo,
+      internalNotes: ["Caso creado desde formulario institucional."],
+    })
+    .returning({ id: cases.id });
+
+  await db.insert(casePeople).values({
+    caseId: inserted.id,
+    personType: "solicitante",
+    name: "Persona protegida",
+    contact: "Reservado",
+    demographicData: {},
+    consentStatus: parsed.data.consentStatus,
   });
-  await writeAuditLog({ actorId: user.id, action: "case.create", entityType: "case", entityId: id, after: parsed.data });
-  redirect(`/casos/${id}`);
+
+  await writeAuditLog({ actorId: user.id, action: "case.create", entityType: "case", entityId: inserted.id, after: parsed.data });
+  redirect(`/casos/${inserted.id}`);
 }
 
 export async function createEventAction(_: ActionResult | null, formData: FormData): Promise<ActionResult> {
@@ -110,25 +121,27 @@ export async function createEventAction(_: ActionResult | null, formData: FormDa
     return { ok: false, message: parsed.error.issues[0]?.message ?? "Datos invalidos." };
   }
 
-  const id = makeId("event");
-  events.unshift({
-    id,
-    title: parsed.data.title,
-    description: parsed.data.description,
-    eventType: parsed.data.eventType,
-    dateStart: parsed.data.dateStart,
-    dateEnd: parsed.data.dateEnd,
-    location: parsed.data.location,
-    territoryId: parsed.data.territoryId,
-    organizerId: user.id,
-    attendeesCount: parsed.data.attendeesCount,
-    institutions: [],
-    impactSummary: parsed.data.impactSummary,
-    indicators: ["Personas atendidas"],
-    evidence: [],
-  });
-  await writeAuditLog({ actorId: user.id, action: "event.create", entityType: "event", entityId: id, after: parsed.data });
-  redirect(`/eventos/${id}`);
+  const db = getDb();
+  const [inserted] = await db
+    .insert(events)
+    .values({
+      title: parsed.data.title,
+      description: parsed.data.description,
+      eventType: parsed.data.eventType,
+      dateStart: new Date(parsed.data.dateStart),
+      dateEnd: new Date(parsed.data.dateEnd),
+      location: parsed.data.location,
+      territoryId: parsed.data.territoryId,
+      organizerId: user.id,
+      attendeesCount: parsed.data.attendeesCount,
+      institutions: [],
+      impactSummary: parsed.data.impactSummary,
+      indicators: ["Personas atendidas"],
+    })
+    .returning({ id: events.id });
+
+  await writeAuditLog({ actorId: user.id, action: "event.create", entityType: "event", entityId: inserted.id, after: parsed.data });
+  redirect(`/eventos/${inserted.id}`);
 }
 
 export async function createCommissionAction(_: ActionResult | null, formData: FormData): Promise<ActionResult> {
@@ -138,20 +151,22 @@ export async function createCommissionAction(_: ActionResult | null, formData: F
     return { ok: false, message: parsed.error.issues[0]?.message ?? "Datos invalidos." };
   }
 
-  const id = makeId("fc");
-  fieldCommissions.unshift({
-    id,
-    title: parsed.data.title,
-    commissionType: parsed.data.commissionType,
-    description: parsed.data.description,
-    assignedTo: parsed.data.assignedTo,
-    territoryId: parsed.data.territoryId,
-    status: "programada",
-    scheduledAt: parsed.data.scheduledAt,
-    checkIns: [],
-  });
-  await writeAuditLog({ actorId: user.id, action: "commission.assign", entityType: "field_commission", entityId: id, after: parsed.data });
-  redirect(`/operacion-territorial/comisiones/${id}`);
+  const db = getDb();
+  const [inserted] = await db
+    .insert(fieldCommissions)
+    .values({
+      title: parsed.data.title,
+      commissionType: parsed.data.commissionType,
+      description: parsed.data.description,
+      assignedTo: parsed.data.assignedTo,
+      territoryId: parsed.data.territoryId,
+      status: "programada",
+      scheduledAt: new Date(parsed.data.scheduledAt),
+    })
+    .returning({ id: fieldCommissions.id });
+
+  await writeAuditLog({ actorId: user.id, action: "commission.assign", entityType: "field_commission", entityId: inserted.id, after: parsed.data });
+  redirect(`/operacion-territorial/comisiones/${inserted.id}`);
 }
 
 export async function createCheckInAction(_: ActionResult | null, formData: FormData): Promise<ActionResult> {
@@ -161,24 +176,29 @@ export async function createCheckInAction(_: ActionResult | null, formData: Form
     return { ok: false, message: parsed.error.issues[0]?.message ?? "Ubicacion invalida." };
   }
 
-  const ping = {
-    id: makeId("ping"),
-    userId: user.id,
-    fieldCommissionId: parsed.data.fieldCommissionId,
-    territoryId: parsed.data.territoryId,
-    latitude: parsed.data.latitude,
-    longitude: parsed.data.longitude,
-    accuracyMeters: parsed.data.accuracyMeters,
-    captureMode: parsed.data.captureMode,
-    batteryLevel: parsed.data.batteryLevel,
-    status: parsed.data.captureMode === "commission" ? "en_comision" : "disponible",
-    capturedAt: new Date().toISOString(),
-  } as const;
+  const db = getDb();
+  const [inserted] = await db
+    .insert(delegateLocationPings)
+    .values({
+      userId: user.id,
+      fieldCommissionId: parsed.data.fieldCommissionId || null,
+      territoryId: parsed.data.territoryId,
+      latitude: String(parsed.data.latitude),
+      longitude: String(parsed.data.longitude),
+      accuracyMeters: parsed.data.accuracyMeters,
+      captureMode: parsed.data.captureMode,
+      batteryLevel: parsed.data.batteryLevel ?? null,
+      status: parsed.data.captureMode === "commission" ? "en_comision" : "disponible",
+    })
+    .returning({ id: delegateLocationPings.id });
 
-  allLocationPings.unshift(ping);
-  const commission = fieldCommissions.find((item) => item.id === parsed.data.fieldCommissionId);
-  commission?.checkIns.unshift(ping);
-  await writeAuditLog({ actorId: user.id, action: "geolocation.check_in", entityType: "delegate_location_ping", entityId: ping.id, after: { ...parsed.data, latitude: "redacted", longitude: "redacted" } });
+  await writeAuditLog({
+    actorId: user.id,
+    action: "geolocation.check_in",
+    entityType: "delegate_location_ping",
+    entityId: inserted.id,
+    after: { ...parsed.data, latitude: "redacted", longitude: "redacted" },
+  });
   return { ok: true, message: "Check-in registrado con ubicacion autorizada y auditoria." };
 }
 
@@ -188,7 +208,7 @@ export async function runAssistantAction(_: ActionResult | null, formData: FormD
   if (!parsed.success) {
     return { ok: false, message: parsed.error.issues[0]?.message ?? "Solicitud invalida." };
   }
-  const prompt = aiPromptTemplates.find((item) => item.id === parsed.data.promptTemplateId);
+  const prompt = await getPromptRecordById(parsed.data.promptTemplateId);
   if (!prompt || !prompt.enabled) {
     return { ok: false, message: "El prompt no existe o esta desactivado." };
   }
@@ -224,8 +244,10 @@ export async function savePromptAction(_: ActionResult | null, formData: FormDat
     return { ok: false, message: parsed.error.issues[0]?.message ?? "Prompt invalido." };
   }
 
-  aiPromptTemplates.unshift({
-    id: makeId("prompt"),
+  const db = getDb();
+  const existing = await db.select({ id: aiPromptTemplates.id }).from(aiPromptTemplates).where(eq(aiPromptTemplates.key, parsed.data.key));
+
+  await db.insert(aiPromptTemplates).values({
     key: parsed.data.key,
     name: parsed.data.name,
     description: parsed.data.description,
@@ -234,13 +256,13 @@ export async function savePromptAction(_: ActionResult | null, formData: FormDat
     userPromptTemplate: parsed.data.userPromptTemplate,
     variables: parsed.data.variables,
     providerKey: parsed.data.providerKey,
-    model: parsed.data.model,
-    temperature: parsed.data.temperature,
+    model: parsed.data.model || null,
+    temperature: String(parsed.data.temperature),
     enabled: parsed.data.enabled,
-    version: 1 + aiPromptTemplates.filter((prompt) => prompt.key === parsed.data.key).length,
+    version: existing.length + 1,
     updatedBy: user.id,
-    updatedAt: new Date().toISOString(),
   });
+
   await writeAuditLog({ actorId: user.id, action: "ai.prompt_update", entityType: "ai_prompt_template", entityId: parsed.data.key, after: parsed.data });
   redirect("/asistente/prompts");
 }
@@ -260,5 +282,5 @@ export async function exportReportAction(formData: FormData) {
 function nextYear() {
   const date = new Date();
   date.setFullYear(date.getFullYear() + 1);
-  return date.toISOString();
+  return date;
 }

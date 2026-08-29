@@ -18,15 +18,25 @@ Implementacion Next.js App Router + TypeScript para Vercel, alineada al PRD IA a
 
 ## Desarrollo
 
+La aplicacion usa Postgres (Drizzle ORM) como unica fuente de datos. Copia
+`.env.example` a `.env` y define `DATABASE_URL` y `NEXTAUTH_SECRET` antes de
+iniciar.
+
 ```bash
 npm install
+cp .env.example .env   # completa DATABASE_URL y NEXTAUTH_SECRET
+npm run db:push        # crea el esquema en la base
+npm run db:seed        # carga datos iniciales (usuarios, roles, catalogos)
 npm run dev
 ```
 
-Usuario demo:
+Usuario inicial creado por el seed:
 
 - Correo: `admin@demo.org`
-- Contrasena: `demo-seguro`
+- Contrasena: valor de `DEMO_PASSWORD` (por defecto `demo-seguro`)
+
+Todos los usuarios semilla comparten esa contrasena, almacenada con hash
+bcrypt. En produccion cada usuario debe tener su propio `password_hash`.
 
 ## Validaciones
 
