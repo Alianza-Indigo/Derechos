@@ -1,6 +1,7 @@
 import { Badge } from "@/components/ui/badge";
 import { Card, CardHeader } from "@/components/ui/card";
 import { DataTable } from "@/components/ui/table";
+import { ProviderConfigForm } from "@/components/forms/quick-actions";
 import { getAssistantData, getUserName } from "@/server/queries/app";
 
 export default async function ProvidersPage() {
@@ -8,7 +9,7 @@ export default async function ProvidersPage() {
   return (
     <Card>
       <CardHeader title="Proveedores IA" description="Gemini, ChatGPT/OpenAI y Claude/Anthropic con credenciales protegidas por variables de entorno." />
-      <DataTable headers={["Proveedor", "Estado", "Modelo default", "Referencia segura", "Prioridad", "Actualizado por"]}>
+      <DataTable headers={["Proveedor", "Estado", "Modelo default", "Referencia segura", "Prioridad", "Actualizado por", "Editar"]}>
         {data.providerConfigs.map((provider) => (
           <tr key={provider.id}>
             <td className="px-4 py-3 font-medium">{provider.displayName}</td>
@@ -17,6 +18,7 @@ export default async function ProvidersPage() {
             <td className="px-4 py-3">{provider.encryptedApiKeyRef.replace(/(.{4}).+/, "$1********")}</td>
             <td className="px-4 py-3">{provider.priority}</td>
             <td className="px-4 py-3">{getUserName(provider.updatedBy)}</td>
+            <td className="px-4 py-3"><ProviderConfigForm provider={provider} /></td>
           </tr>
         ))}
       </DataTable>

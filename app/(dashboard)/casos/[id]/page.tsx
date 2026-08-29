@@ -3,6 +3,8 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardHeader } from "@/components/ui/card";
 import { DataTable } from "@/components/ui/table";
 import { LinkButton } from "@/components/ui/button";
+import { CaseStatusForm, EvidenceForm } from "@/components/forms/quick-actions";
+import { caseStatuses } from "@/lib/constants";
 import { formatDate } from "@/lib/utils";
 import { getCaseById, getTerritoryName, getUserName } from "@/server/queries/app";
 
@@ -23,6 +25,10 @@ export default async function CaseDetailPage({ params }: { params: Promise<{ id:
           <div><p className="text-xs text-slate-500">Apertura</p><p className="font-medium">{formatDate(record.openedAt)}</p></div>
         </div>
         <p className="mt-5 text-sm leading-6 text-slate-700">{record.description}</p>
+      </Card>
+      <Card>
+        <CardHeader title="Cambio de estado" description="El motivo es obligatorio y queda en historial/auditoria." />
+        <CaseStatusForm caseId={record.id} statuses={caseStatuses} />
       </Card>
       <section className="grid gap-6 xl:grid-cols-2">
         <Card>
@@ -54,6 +60,9 @@ export default async function CaseDetailPage({ params }: { params: Promise<{ id:
       </section>
       <Card>
         <CardHeader title="Evidencia y notas internas" description="URLs protegidas mediante Vercel Blob en produccion." />
+        <div className="mb-4">
+          <EvidenceForm entityId={record.id} entityType="case" />
+        </div>
         <DataTable headers={["Tipo", "Descripcion", "Carga"]}>
           {record.evidence.map((evidence) => (
             <tr key={evidence.id}>

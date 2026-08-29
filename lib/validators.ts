@@ -1,6 +1,13 @@
 import { z } from "zod";
 import { caseCategories, caseStatuses, eventTypes, priorities, promptScopes } from "@/lib/constants";
 
+const formBoolean = z.union([z.boolean(), z.enum(["true", "false", "on", "1", "0"])]).transform((value) => {
+  if (typeof value === "boolean") {
+    return value;
+  }
+  return value === "true" || value === "on" || value === "1";
+});
+
 export const memberFormSchema = z.object({
   fullName: z.string().min(3, "Captura el nombre completo."),
   birthDate: z.string().min(4, "Captura fecha de nacimiento."),
@@ -21,6 +28,38 @@ export const caseFormSchema = z.object({
   territoryId: z.string().min(1),
   assignedTo: z.string().min(1),
   consentStatus: z.enum(["documentado", "pendiente", "no_aplica"]),
+});
+
+export const caseStatusUpdateSchema = z.object({
+  caseId: z.string().min(1),
+  status: z.enum(caseStatuses),
+  reason: z.string().min(10, "El motivo del cambio de estado es obligatorio."),
+});
+
+export const evidenceFormSchema = z.object({
+  entityType: z.enum(["case", "event"]),
+  entityId: z.string().min(1),
+  fileUrl: z.string().min(3),
+  fileType: z.string().min(3),
+  description: z.string().min(5),
+});
+
+export const prevalenceRecordSchema = z.object({
+  studyId: z.string().min(1),
+  metricId: z.string().min(1),
+  territoryId: z.string().min(1),
+  valueNumeric: z.coerce.number().optional(),
+  valueText: z.string().optional(),
+  sampleSize: z.coerce.number().int().nonnegative().optional(),
+  source: z.string().min(3),
+  measuredAt: z.string().min(1),
+});
+
+export const providerConfigSchema = z.object({
+  providerKey: z.enum(["gemini", "openai", "anthropic"]),
+  enabled: formBoolean,
+  defaultModel: z.string().min(2),
+  priority: z.coerce.number().int().min(1).max(99),
 });
 
 export const eventFormSchema = z.object({
@@ -65,7 +104,7 @@ export const promptTemplateSchema = z.object({
   providerKey: z.enum(["global", "gemini", "openai", "anthropic"]),
   model: z.string().optional(),
   temperature: z.coerce.number().min(0).max(1),
-  enabled: z.coerce.boolean().default(true),
+  enabled: formBoolean.default(true),
 });
 
 export const aiRunSchema = z.object({

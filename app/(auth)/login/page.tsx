@@ -1,5 +1,5 @@
 import { ShieldCheck } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { LoginForm } from "./login-form";
 
 export default function LoginPage() {
   return (
@@ -14,17 +14,7 @@ export default function LoginPage() {
             <p className="text-sm text-slate-600">Autenticacion preparada para Auth.js y RBAC territorial.</p>
           </div>
         </div>
-        <form className="space-y-4">
-          <label>
-            <span className="text-sm font-medium text-slate-700">Correo</span>
-            <input defaultValue="admin@demo.org" type="email" className="mt-1 h-10 w-full rounded-md border border-slate-300 px-3 text-sm" />
-          </label>
-          <label>
-            <span className="text-sm font-medium text-slate-700">Contrasena</span>
-            <input defaultValue="demo-seguro" type="password" className="mt-1 h-10 w-full rounded-md border border-slate-300 px-3 text-sm" />
-          </label>
-          <Button type="button" className="w-full">Entrar al panel</Button>
-        </form>
+        <LoginForm />
         <p className="mt-4 text-xs text-slate-500">Login demo local. En produccion usa `AUTH_SECRET`, `DATABASE_URL` y proveedor Auth.js.</p>
       </section>
     </main>

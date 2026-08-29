@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState } from "react";
+import { useForm } from "react-hook-form";
 import { Button } from "@/components/ui/button";
 
 type Field = {
@@ -22,6 +23,7 @@ export function ResourceForm({
   submitLabel: string;
 }) {
   const [state, formAction, pending] = useActionState(action, null);
+  const { register } = useForm();
 
   return (
     <form action={formAction} className="space-y-5">
@@ -30,9 +32,9 @@ export function ResourceForm({
           <label key={field.name} className={field.type === "textarea" ? "md:col-span-2" : ""}>
             <span className="text-sm font-medium text-slate-700">{field.label}</span>
             {field.type === "textarea" ? (
-              <textarea name={field.name} required={field.required} defaultValue={field.defaultValue} className="mt-1 min-h-32 w-full rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-teal-700" />
+              <textarea {...register(field.name, { required: field.required })} required={field.required} defaultValue={field.defaultValue} className="mt-1 min-h-32 w-full rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-teal-700" />
             ) : field.type === "select" ? (
-              <select name={field.name} required={field.required} defaultValue={field.defaultValue} className="mt-1 h-10 w-full rounded-md border border-slate-300 px-3 text-sm outline-none focus:border-teal-700">
+              <select {...register(field.name, { required: field.required })} required={field.required} defaultValue={field.defaultValue} className="mt-1 h-10 w-full rounded-md border border-slate-300 px-3 text-sm outline-none focus:border-teal-700">
                 {field.options?.map((option) => (
                   <option key={option.value} value={option.value}>
                     {option.label}
@@ -40,7 +42,7 @@ export function ResourceForm({
                 ))}
               </select>
             ) : (
-              <input name={field.name} type={field.type ?? "text"} required={field.required} defaultValue={field.defaultValue} className="mt-1 h-10 w-full rounded-md border border-slate-300 px-3 text-sm outline-none focus:border-teal-700" />
+              <input {...register(field.name, { required: field.required })} type={field.type ?? "text"} required={field.required} defaultValue={field.defaultValue} className="mt-1 h-10 w-full rounded-md border border-slate-300 px-3 text-sm outline-none focus:border-teal-700" />
             )}
           </label>
         ))}

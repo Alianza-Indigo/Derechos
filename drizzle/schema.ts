@@ -172,6 +172,25 @@ export const caseActions = pgTable("case_actions", {
   createdAt,
 });
 
+export const caseNotes = pgTable("case_notes", {
+  id: id(),
+  caseId: uuid("case_id").references(() => cases.id).notNull(),
+  note: text("note").notNull(),
+  visibility: text("visibility").default("internal").notNull(),
+  createdBy: uuid("created_by").references(() => users.id).notNull(),
+  createdAt,
+});
+
+export const caseStatusHistory = pgTable("case_status_history", {
+  id: id(),
+  caseId: uuid("case_id").references(() => cases.id).notNull(),
+  fromStatus: caseStatusEnum("from_status"),
+  toStatus: caseStatusEnum("to_status").notNull(),
+  reason: text("reason").notNull(),
+  changedBy: uuid("changed_by").references(() => users.id).notNull(),
+  createdAt,
+});
+
 export const caseEvidence = pgTable("case_evidence", {
   id: id(),
   caseId: uuid("case_id").references(() => cases.id).notNull(),
@@ -206,6 +225,15 @@ export const eventEvidence = pgTable("event_evidence", {
   fileUrl: text("file_url").notNull(),
   type: text("type").notNull(),
   description: text("description").notNull(),
+  createdAt,
+});
+
+export const credentialVerificationLogs = pgTable("credential_verification_logs", {
+  id: id(),
+  credentialId: uuid("credential_id").references(() => memberCredentials.id).notNull(),
+  publicSlug: text("public_slug").notNull(),
+  ipHash: text("ip_hash"),
+  userAgentHash: text("user_agent_hash"),
   createdAt,
 });
 
@@ -280,6 +308,18 @@ export const locationTrackingSettings = pgTable("location_tracking_settings", {
   updatedBy: uuid("updated_by").references(() => users.id).notNull(),
   updatedAt,
 });
+
+export const territoryLocationSettings = pgTable("territory_location_settings", {
+  id: id(),
+  territoryId: uuid("territory_id").references(() => territories.id).notNull(),
+  enabled: boolean("enabled").default(false).notNull(),
+  mode: locationModeEnum("mode").default("manual_check_in").notNull(),
+  retentionDays: integer("retention_days").default(30).notNull(),
+  updatedBy: uuid("updated_by").references(() => users.id).notNull(),
+  updatedAt,
+}, (table) => ({
+  territoryIdx: uniqueIndex("territory_location_settings_territory_idx").on(table.territoryId),
+}));
 
 export const delegateLocationPings = pgTable("delegate_location_pings", {
   id: id(),

@@ -65,6 +65,7 @@ export type HumanRightsCase = {
   openedBy: string;
   assignedTo: string;
   openedAt: string;
+  closedAt?: string;
   dueDate?: string;
   persons: CasePerson[];
   actions: CaseAction[];

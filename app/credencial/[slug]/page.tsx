@@ -1,15 +1,23 @@
 import { notFound } from "next/navigation";
+import { headers } from "next/headers";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardHeader } from "@/components/ui/card";
 import { APP_NAME } from "@/lib/constants";
 import { credentialQrDataUrl } from "@/lib/qr";
 import { formatDate } from "@/lib/utils";
+import { logCredentialVerification } from "@/server/audit/credential";
 import { getMemberByCredentialSlug, getTerritoryName } from "@/server/queries/app";
 
 export default async function CredentialPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const member = await getMemberByCredentialSlug(slug);
   if (!member) notFound();
+  const requestHeaders = await headers();
+  await logCredentialVerification({
+    publicSlug: slug,
+    ip: requestHeaders.get("x-forwarded-for")?.split(",")[0]?.trim(),
+    userAgent: requestHeaders.get("user-agent"),
+  });
   const qr = await credentialQrDataUrl(slug);
 
   return (

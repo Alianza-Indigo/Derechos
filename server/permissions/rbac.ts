@@ -1,4 +1,5 @@
 import type { HumanRightsCase, RoleKey, User } from "@/lib/types";
+import { stableUuid } from "@/lib/stable-id";
 
 const rolePermissions: Record<RoleKey, string[]> = {
   super_admin: ["*"],
@@ -25,10 +26,10 @@ export function canAccessTerritory(user: User, territoryId?: string) {
   if (!territoryId) {
     return false;
   }
-  if (user.territoryId === territoryId) {
+  if (sameScope(user.territoryId, territoryId)) {
     return true;
   }
-  if (user.territoryId === "chh" && ["cdj", "chc"].includes(territoryId)) {
+  if (sameScope(user.territoryId, "chh") && ["cdj", "chc"].some((child) => sameScope(child, territoryId))) {
     return true;
   }
   return false;
@@ -52,4 +53,11 @@ export function redactSensitive<T extends Record<string, unknown>>(value: T, all
   delete clone.evidence;
   delete clone.internalNotes;
   return clone;
+}
+
+function sameScope(left?: string, right?: string) {
+  if (!left || !right) {
+    return false;
+  }
+  return left === right || stableUuid(left) === right || stableUuid(right) === left;
 }
