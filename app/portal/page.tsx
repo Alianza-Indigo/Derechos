@@ -45,7 +45,7 @@ export default async function PortalHomePage() {
             )}
             {member.photoUrl ? (
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={member.photoUrl} alt="Mi fotografia" className="size-24 rounded-lg border border-slate-200 object-cover" />
+              <img src={`/api/member-photo/${member.id}`} alt="Mi fotografia" className="size-24 rounded-lg border border-slate-200 object-cover" />
             ) : null}
             <div className="space-y-1 text-sm">
               <p className="font-semibold text-slate-900">{member.fullName}</p>

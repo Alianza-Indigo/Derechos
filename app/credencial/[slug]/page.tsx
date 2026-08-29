@@ -30,7 +30,7 @@ export default async function CredentialPage({ params }: { params: Promise<{ slu
           <p className="text-sm text-slate-500">{APP_NAME}</p>
           {member.photoUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={member.photoUrl} alt={`Fotografia de ${member.fullName}`} className="mx-auto mt-4 size-28 rounded-full border border-slate-200 object-cover" />
+            <img src={`/api/member-photo/${member.id}`} alt={`Fotografia de ${member.fullName}`} className="mx-auto mt-4 size-28 rounded-full border border-slate-200 object-cover" />
           ) : null}
           <h1 className="mt-2 text-xl font-semibold text-slate-950">{member.fullName}</h1>
           <p className="mt-1 text-slate-600">{member.memberNumber}</p>

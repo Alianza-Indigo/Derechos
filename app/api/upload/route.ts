@@ -42,8 +42,10 @@ export async function POST(request: NextRequest) {
   // ruta del blob.
   const safeName = (file.name || "archivo").replace(/[^a-zA-Z0-9._-]/g, "_").slice(-80);
   try {
+    // Store privado: las fotos se sirven por un proxy publico
+    // (/api/member-photo/[id]); la evidencia queda protegida.
     const blob = await put(`${entityType}/${safeName}`, file, {
-      access: "public",
+      access: "private",
       addRandomSuffix: true,
     });
     return NextResponse.json({ url: blob.url, pathname: blob.pathname });

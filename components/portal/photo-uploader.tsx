@@ -4,11 +4,11 @@ import { type FormEvent, useActionState, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { updateMemberPhotoAction } from "@/server/actions/platform";
 
-export function MemberPhotoUploader({ memberId, currentPhoto }: { memberId?: string; currentPhoto?: string }) {
+export function MemberPhotoUploader({ memberId, proxyUrl, hasPhoto }: { memberId?: string; proxyUrl: string; hasPhoto?: boolean }) {
   const [state, formAction, pending] = useActionState(updateMemberPhotoAction, null);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [preview, setPreview] = useState<string | undefined>(currentPhoto);
+  const [preview, setPreview] = useState<string | undefined>(hasPhoto ? proxyUrl : undefined);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -43,11 +43,12 @@ export function MemberPhotoUploader({ memberId, currentPhoto }: { memberId?: str
         setError(result.message ?? "La respuesta de carga no incluyo una URL.");
         return;
       }
-      setPreview(result.url);
       const payload = new FormData();
       payload.set("photoUrl", result.url);
       if (memberId) payload.set("memberId", memberId);
       formAction(payload);
+      // La foto se sirve por el proxy; se refresca con un parametro anti-cache.
+      setPreview(`${proxyUrl}?t=${Date.now()}`);
     } catch (uploadError) {
       if (uploadError instanceof DOMException && uploadError.name === "AbortError") {
         setError("La carga tardo demasiado y se cancelo. Intenta de nuevo.");

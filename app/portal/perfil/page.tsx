@@ -18,7 +18,7 @@ export default async function PortalProfilePage() {
     <div className="space-y-6">
       <Card>
         <CardHeader title="Mi fotografia" description="Tu foto aparece en tu pagina de verificacion publica para comprobar tu identidad." />
-        <MemberPhotoUploader currentPhoto={member.photoUrl} />
+        <MemberPhotoUploader proxyUrl={`/api/member-photo/${member.id}`} hasPhoto={Boolean(member.photoUrl)} />
       </Card>
       <Card>
         <CardHeader title="Mis datos de contacto" description="Manten actualizada tu informacion. Los cambios quedan registrados." />

@@ -54,7 +54,7 @@ export default async function MemberDetailPage({ params }: { params: Promise<{ i
         {canManage ? (
           <div className="mt-4 border-t border-slate-100 pt-4">
             <p className="mb-2 text-sm font-medium text-slate-700">Fotografia del miembro</p>
-            <MemberPhotoUploader memberId={member.id} currentPhoto={member.photoUrl} />
+            <MemberPhotoUploader memberId={member.id} proxyUrl={`/api/member-photo/${member.id}`} hasPhoto={Boolean(member.photoUrl)} />
           </div>
         ) : null}
         {canManage ? (
