@@ -1,7 +1,6 @@
 "use client";
 
 import { useActionState } from "react";
-import { signOut } from "next-auth/react";
 import { Button } from "@/components/ui/button";
 import { caseCategories } from "@/lib/constants";
 import { createMemberReportAction, updateMemberProfileAction } from "@/server/actions/platform";
@@ -9,17 +8,6 @@ import { createMemberReportAction, updateMemberProfileAction } from "@/server/ac
 function Msg({ state }: { state: { ok: boolean; message: string } | null }) {
   if (!state?.message) return null;
   return <p className={state.ok ? "text-sm text-emerald-700" : "text-sm text-rose-700"}>{state.message}</p>;
-}
-
-export function LogoutButton() {
-  return (
-    <button
-      onClick={() => signOut({ callbackUrl: "/login" })}
-      className="rounded-md border border-slate-200 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
-    >
-      Cerrar sesion
-    </button>
-  );
 }
 
 export function MemberReportForm() {

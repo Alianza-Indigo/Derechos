@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { navigationItems, APP_NAME } from "@/lib/constants";
+import { LogoutButton } from "@/components/layout/logout-button";
 import { cn, initials } from "@/lib/utils";
 import { getCurrentUser } from "@/server/queries/app";
 
@@ -39,6 +40,7 @@ export async function AppShell({ children }: { children: ReactNode }) {
               <p className="text-xs text-slate-500">{user.roles.join(", ")}</p>
             </div>
             <div className="flex size-9 items-center justify-center rounded-full bg-slate-900 text-xs font-bold text-white">{initials(user.name)}</div>
+            <LogoutButton />
           </div>
         </header>
 

@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { LogoutButton } from "@/components/portal/portal-forms";
+import { LogoutButton } from "@/components/layout/logout-button";
 import { APP_NAME } from "@/lib/constants";
 import { getCurrentUser } from "@/server/queries/app";
 
