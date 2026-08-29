@@ -18,6 +18,10 @@ export function hasPermission(user: User, permission: string) {
   return user.roles.some((role) => rolePermissions[role]?.includes("*") || rolePermissions[role]?.includes(permission));
 }
 
+export function hasAnyPermission(user: User, permissions: string[]) {
+  return permissions.some((permission) => hasPermission(user, permission));
+}
+
 export function canAccessTerritory(user: User, territoryId?: string) {
   if (hasPermission(user, "*") || user.roles.includes("super_admin") || user.roles.includes("national_direction")) {
     return true;
@@ -41,15 +45,30 @@ export function canAccessCase(user: User, record: HumanRightsCase) {
   return record.assignedTo === user.id || record.openedBy === user.id;
 }
 
-export function redactSensitive<T extends Record<string, unknown>>(value: T, allowSensitive: boolean) {
+// Puede ver datos personales sensibles (telefono, correo, domicilio, contacto).
+export function canViewSensitive(user: User) {
+  return hasAnyPermission(user, [
+    "*",
+    "read:national",
+    "read:territory",
+    "write:territory",
+    "write:case",
+    "read:audit",
+    "audit",
+  ]);
+}
+
+const SENSITIVE_FIELDS = ["phone", "email", "address", "contact"] as const;
+
+export function redactSensitive<T extends Record<string, unknown>>(value: T, allowSensitive: boolean): T {
   if (allowSensitive) {
     return value;
   }
-  const clone = { ...value };
-  delete clone.phone;
-  delete clone.email;
-  delete clone.address;
-  delete clone.evidence;
-  delete clone.internalNotes;
-  return clone;
+  const clone: Record<string, unknown> = { ...value };
+  for (const field of SENSITIVE_FIELDS) {
+    if (field in clone && typeof clone[field] === "string") {
+      clone[field] = "Reservado";
+    }
+  }
+  return clone as T;
 }

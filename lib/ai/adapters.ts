@@ -1,9 +1,10 @@
-import { anthropic } from "@ai-sdk/anthropic";
-import { google } from "@ai-sdk/google";
-import { openai } from "@ai-sdk/openai";
+import { createAnthropic } from "@ai-sdk/anthropic";
+import { createGoogleGenerativeAI } from "@ai-sdk/google";
+import { createOpenAI } from "@ai-sdk/openai";
 import { generateText } from "ai";
-import { listProviderConfigs } from "@/server/queries/app";
-import type { AiPromptTemplate, AiProviderConfig } from "@/lib/types";
+import { aiProviderConfigs } from "@/drizzle/schema";
+import { getDb } from "@/server/db";
+import type { AiPromptTemplate } from "@/lib/types";
 
 type RunAssistantInput = {
   prompt: AiPromptTemplate;
@@ -11,7 +12,20 @@ type RunAssistantInput = {
   context: Record<string, unknown>;
 };
 
+type ResolvedProvider = {
+  key: "gemini" | "openai" | "anthropic";
+  displayName: string;
+  defaultModel: string;
+  apiKey: string | null;
+};
+
 const blockedPatterns = [/fabric(a|ar).*evidencia/i, /ocult(a|ar).*evidencia/i, /alter(a|ar).*documento/i];
+
+const ENV_BY_PROVIDER: Record<ResolvedProvider["key"], string> = {
+  gemini: "GOOGLE_GENERATIVE_AI_API_KEY",
+  anthropic: "ANTHROPIC_API_KEY",
+  openai: "OPENAI_API_KEY",
+};
 
 export async function runAssistant({ prompt, message, context }: RunAssistantInput) {
   if (blockedPatterns.some((pattern) => pattern.test(message))) {
@@ -25,8 +39,8 @@ export async function runAssistant({ prompt, message, context }: RunAssistantInp
     };
   }
 
-  const providerConfigs = await listProviderConfigs();
-  const selected = resolveProvider(prompt, providerConfigs);
+  const selected = await resolveProvider(prompt);
+  const apiKey = selected.apiKey || process.env[ENV_BY_PROVIDER[selected.key]] || "";
   const contextText = JSON.stringify(context, null, 2).slice(0, 4000);
   const userPrompt = prompt.userPromptTemplate
     .replaceAll("{{contexto}}", contextText)
@@ -34,7 +48,7 @@ export async function runAssistant({ prompt, message, context }: RunAssistantInp
     .replaceAll("{{territorio}}", String(context.territorio ?? ""))
     .replaceAll("{{rol}}", String(context.rol ?? ""));
 
-  if (!selected.enabled || !process.env[selected.env]) {
+  if (!apiKey) {
     return {
       output: buildLocalDraft(prompt, message, selected.displayName),
       provider: selected.key,
@@ -44,7 +58,7 @@ export async function runAssistant({ prompt, message, context }: RunAssistantInp
     };
   }
 
-  const model = getModel(selected.key, prompt.model || selected.defaultModel);
+  const model = getModel(selected.key, prompt.model || selected.defaultModel, apiKey);
   const result = await generateText({
     model,
     system: prompt.systemPrompt,
@@ -61,34 +75,36 @@ export async function runAssistant({ prompt, message, context }: RunAssistantInp
   };
 }
 
-function resolveProvider(prompt: AiPromptTemplate, providerConfigs: AiProviderConfig[]) {
-  const defaultProvider = process.env.AI_DEFAULT_PROVIDER || "openai";
+async function resolveProvider(prompt: AiPromptTemplate): Promise<ResolvedProvider> {
+  const db = getDb();
+  const configs = await db.select().from(aiProviderConfigs).orderBy(aiProviderConfigs.priority);
+  const defaultProvider = (process.env.AI_DEFAULT_PROVIDER as ResolvedProvider["key"]) || "openai";
   const providerKey = prompt.providerKey === "global" ? defaultProvider : prompt.providerKey;
   const provider =
-    providerConfigs.find((item) => item.providerKey === providerKey) ??
-    providerConfigs.find((item) => item.providerKey === "openai") ??
-    providerConfigs[0];
+    configs.find((item) => item.providerKey === providerKey) ??
+    configs.find((item) => item.providerKey === "openai") ??
+    configs[0];
+
   if (!provider) {
-    return {
-      key: "openai" as const,
-      displayName: "ChatGPT/OpenAI",
-      defaultModel: process.env.AI_DEFAULT_MODEL || "gpt-5-mini",
-      enabled: false,
-      env: "OPENAI_API_KEY",
-    };
+    return { key: "openai", displayName: "ChatGPT/OpenAI", defaultModel: process.env.AI_DEFAULT_MODEL || "gpt-5-mini", apiKey: null };
   }
-  const env = provider.providerKey === "gemini" ? "GOOGLE_GENERATIVE_AI_API_KEY" : provider.providerKey === "anthropic" ? "ANTHROPIC_API_KEY" : "OPENAI_API_KEY";
-  return { ...provider, key: provider.providerKey, env };
+
+  return {
+    key: provider.providerKey,
+    displayName: provider.displayName,
+    defaultModel: provider.defaultModel,
+    apiKey: provider.apiKey,
+  };
 }
 
-function getModel(provider: string, model: string) {
+function getModel(provider: ResolvedProvider["key"], model: string, apiKey: string) {
   if (provider === "gemini") {
-    return google(model);
+    return createGoogleGenerativeAI({ apiKey })(model);
   }
   if (provider === "anthropic") {
-    return anthropic(model);
+    return createAnthropic({ apiKey })(model);
   }
-  return openai(model);
+  return createOpenAI({ apiKey })(model);
 }
 
 function buildLocalDraft(prompt: AiPromptTemplate, message: string, provider: string) {

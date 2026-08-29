@@ -3,12 +3,16 @@ import { Card, CardHeader } from "@/components/ui/card";
 import { DataTable } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { formatDateTime } from "@/lib/utils";
-import { getCommissionById, getTerritoryName, getUserName } from "@/server/queries/app";
+import { CommissionManagement } from "@/components/operations/commission-management";
+import { getCommissionById, getCurrentUser, getTerritoryName, getUserName } from "@/server/queries/app";
+import { hasAnyPermission } from "@/server/permissions/rbac";
 
 export default async function CommissionDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const commission = await getCommissionById(id);
   if (!commission) notFound();
+  const user = await getCurrentUser();
+  const canWrite = hasAnyPermission(user, ["write:field", "write:territory", "*"]);
   return (
     <div className="space-y-6">
       <Card>
@@ -21,6 +25,7 @@ export default async function CommissionDetailPage({ params }: { params: Promise
           <div><p className="text-xs text-slate-500">Programada</p><p className="font-medium">{formatDateTime(commission.scheduledAt)}</p></div>
         </div>
       </Card>
+      {canWrite ? <CommissionManagement id={commission.id} status={commission.status} description={commission.description} /> : null}
       <Card>
         <CardHeader title="Historial de check-ins" description="La ubicacion es dato sensible, auditable y de retencion limitada." />
         <DataTable headers={["Usuario", "Estado", "Modo", "Precision", "Fecha"]}>

@@ -68,6 +68,7 @@ CREATE TABLE "ai_provider_configs" (
 	"enabled" boolean DEFAULT false NOT NULL,
 	"default_model" text NOT NULL,
 	"encrypted_api_key_ref" text NOT NULL,
+	"api_key" text,
 	"priority" integer DEFAULT 10 NOT NULL,
 	"updated_by" text NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL

@@ -2,14 +2,18 @@ import { notFound } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardHeader } from "@/components/ui/card";
 import { DataTable } from "@/components/ui/table";
+import { LinkButton } from "@/components/ui/button";
 import { credentialQrDataUrl, credentialUrl } from "@/lib/qr";
 import { formatDate } from "@/lib/utils";
-import { getMemberById, getTerritoryName } from "@/server/queries/app";
+import { getCurrentUser, getMemberById, getTerritoryName } from "@/server/queries/app";
+import { hasAnyPermission } from "@/server/permissions/rbac";
 
 export default async function MemberDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const member = await getMemberById(id);
   if (!member) notFound();
+  const user = await getCurrentUser();
+  const canEdit = hasAnyPermission(user, ["write:territory", "write:limited", "*"]);
   const qr = await credentialQrDataUrl(member.credentialSlug);
 
   return (
@@ -25,7 +29,7 @@ export default async function MemberDetailPage({ params }: { params: Promise<{ i
         </div>
       </Card>
       <Card>
-        <CardHeader title="Perfil interno de miembro" description="Incluye datos sensibles solo para usuarios autorizados." />
+        <CardHeader title="Perfil interno de miembro" description="Incluye datos sensibles solo para usuarios autorizados." action={canEdit ? <LinkButton href={`/miembros/${member.id}/editar`}>Editar</LinkButton> : undefined} />
         <DataTable headers={["Campo", "Valor"]}>
           <tr><td className="px-4 py-3 font-medium">Nombre</td><td className="px-4 py-3">{member.fullName}</td></tr>
           <tr><td className="px-4 py-3 font-medium">Numero</td><td className="px-4 py-3">{member.memberNumber}</td></tr>

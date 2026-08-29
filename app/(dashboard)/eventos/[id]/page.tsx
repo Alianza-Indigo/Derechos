@@ -3,16 +3,28 @@ import { Card, CardHeader } from "@/components/ui/card";
 import { DataTable } from "@/components/ui/table";
 import { LinkButton } from "@/components/ui/button";
 import { formatDate } from "@/lib/utils";
-import { getEventById, getTerritoryName, getUserName } from "@/server/queries/app";
+import { getCurrentUser, getEventById, getTerritoryName, getUserName } from "@/server/queries/app";
+import { hasAnyPermission } from "@/server/permissions/rbac";
 
 export default async function EventDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const event = await getEventById(id);
   if (!event) notFound();
+  const user = await getCurrentUser();
+  const canEdit = hasAnyPermission(user, ["write:event", "write:territory", "*"]);
   return (
     <div className="space-y-6">
       <Card>
-        <CardHeader title={event.title} description={event.description} action={<LinkButton href="/api/export/events?format=pdf">Ficha PDF</LinkButton>} />
+        <CardHeader
+          title={event.title}
+          description={event.description}
+          action={
+            <div className="flex gap-2">
+              {canEdit ? <LinkButton href={`/eventos/${event.id}/editar`}>Editar</LinkButton> : null}
+              <LinkButton href="/api/export/events?format=pdf">Ficha PDF</LinkButton>
+            </div>
+          }
+        />
         <div className="grid gap-4 md:grid-cols-4">
           <div><p className="text-xs text-slate-500">Tipo</p><p className="font-medium">{event.eventType}</p></div>
           <div><p className="text-xs text-slate-500">Fecha</p><p className="font-medium">{formatDate(event.dateStart)}</p></div>

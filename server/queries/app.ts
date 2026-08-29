@@ -24,7 +24,7 @@ import type {
 } from "@/lib/types";
 import { authOptions } from "@/server/auth/options";
 import { getDb, type Database } from "@/server/db";
-import { canAccessCase, canAccessTerritory } from "@/server/permissions/rbac";
+import { canAccessCase, canAccessTerritory, canViewSensitive, hasAnyPermission, redactSensitive } from "@/server/permissions/rbac";
 
 const iso = (value: Date | null | undefined) => (value ? value.toISOString() : undefined);
 const num = (value: string | null | undefined) => (value === null || value === undefined ? undefined : Number(value));
@@ -168,15 +168,36 @@ async function mapMembers(db: Database, rows: (typeof schema.members.$inferSelec
 
 export async function listMembers(query?: string) {
   const { db } = await loadReference();
+  const user = await getCurrentUser();
   const rows = await db.select().from(schema.members).orderBy(desc(schema.members.joinedAt));
-  const members = await mapMembers(db, rows);
+  const sensitive = canViewSensitive(user);
+  const members = (await mapMembers(db, rows))
+    .filter((member) => canAccessTerritory(user, member.territoryId))
+    .map((member) => redactSensitive(member, sensitive));
   return filterText(members, query, (member) => [member.fullName, member.memberNumber, member.email, member.status]);
 }
 
 export async function getMemberById(id: string) {
   const { db } = await loadReference();
+  const user = await getCurrentUser();
   const rows = await db.select().from(schema.members).where(eq(schema.members.id, id));
-  return (await mapMembers(db, rows))[0];
+  const member = (await mapMembers(db, rows))[0];
+  if (!member || !canAccessTerritory(user, member.territoryId)) {
+    return undefined;
+  }
+  return redactSensitive(member, canViewSensitive(user));
+}
+
+// Miembro sin redaccion para formularios de edicion (requiere acceso territorial).
+export async function getEditableMember(id: string) {
+  const { db } = await loadReference();
+  const user = await getCurrentUser();
+  const rows = await db.select().from(schema.members).where(eq(schema.members.id, id));
+  const member = (await mapMembers(db, rows))[0];
+  if (!member || !canAccessTerritory(user, member.territoryId)) {
+    return undefined;
+  }
+  return member;
 }
 
 export async function getMemberByCredentialSlug(slug: string) {
@@ -253,17 +274,33 @@ async function mapCases(db: Database, rows: (typeof schema.cases.$inferSelect)[]
   }));
 }
 
+function redactCasePeople(record: HumanRightsCase, sensitive: boolean): HumanRightsCase {
+  if (sensitive) {
+    return record;
+  }
+  return { ...record, persons: record.persons.map((person) => redactSensitive(person, false)) };
+}
+
 export async function listCases(query?: string) {
   const { db } = await loadReference();
+  const user = await getCurrentUser();
   const rows = await db.select().from(schema.cases).orderBy(desc(schema.cases.openedAt));
-  const cases = await mapCases(db, rows);
+  const sensitive = canViewSensitive(user);
+  const cases = (await mapCases(db, rows))
+    .filter((record) => canAccessCase(user, record))
+    .map((record) => redactCasePeople(record, sensitive));
   return filterText(cases, query, (record) => [record.caseNumber, record.title, record.category, record.status, record.priority]);
 }
 
 export async function getCaseById(id: string) {
   const { db } = await loadReference();
+  const user = await getCurrentUser();
   const rows = await db.select().from(schema.cases).where(eq(schema.cases.id, id));
-  return (await mapCases(db, rows))[0];
+  const record = (await mapCases(db, rows))[0];
+  if (!record || !canAccessCase(user, record)) {
+    return undefined;
+  }
+  return redactCasePeople(record, canViewSensitive(user));
 }
 
 // ---------------------------------------------------------------------------
@@ -307,15 +344,21 @@ async function mapEvents(db: Database, rows: (typeof schema.events.$inferSelect)
 
 export async function listEvents(query?: string) {
   const { db } = await loadReference();
+  const user = await getCurrentUser();
   const rows = await db.select().from(schema.events).orderBy(desc(schema.events.dateStart));
-  const events = await mapEvents(db, rows);
+  const events = (await mapEvents(db, rows)).filter((event) => canAccessTerritory(user, event.territoryId));
   return filterText(events, query, (event) => [event.title, event.eventType, event.location, event.impactSummary]);
 }
 
 export async function getEventById(id: string) {
   const { db } = await loadReference();
+  const user = await getCurrentUser();
   const rows = await db.select().from(schema.events).where(eq(schema.events.id, id));
-  return (await mapEvents(db, rows))[0];
+  const event = (await mapEvents(db, rows))[0];
+  if (!event || !canAccessTerritory(user, event.territoryId)) {
+    return undefined;
+  }
+  return event;
 }
 
 // ---------------------------------------------------------------------------
@@ -391,25 +434,38 @@ async function loadCommissions(db: Database, rows: (typeof schema.fieldCommissio
   }));
 }
 
+function canAccessCommission(user: User, commission: FieldCommission) {
+  return canAccessTerritory(user, commission.territoryId) || commission.assignedTo === user.id;
+}
+
 export async function getOperationsData() {
   const { db, users } = await loadReference();
+  const user = await getCurrentUser();
   const [commissionRows, settingRows, pingRows] = await Promise.all([
     db.select().from(schema.fieldCommissions).orderBy(desc(schema.fieldCommissions.scheduledAt)),
     db.select().from(schema.locationTrackingSettings),
     db.select().from(schema.delegateLocationPings).orderBy(desc(schema.delegateLocationPings.capturedAt)),
   ]);
+  const fieldCommissions = (await loadCommissions(db, commissionRows)).filter((commission) => canAccessCommission(user, commission));
+  const pings = pingRows.map(mapPing).filter((ping) => canAccessTerritory(user, ping.territoryId) || ping.userId === user.id);
+  const settings = settingRows.map(mapLocationSetting).filter((setting) => hasAnyPermission(user, ["location:read", "*"]) || setting.userId === user.id);
   return {
-    fieldCommissions: await loadCommissions(db, commissionRows),
-    locationSettings: settingRows.map(mapLocationSetting),
-    pings: pingRows.map(mapPing),
-    people: users.filter((user) => user.roles.includes("territorial_delegate") || user.roles.includes("field_commissioner")),
+    fieldCommissions,
+    locationSettings: settings,
+    pings,
+    people: users.filter((item) => item.roles.includes("territorial_delegate") || item.roles.includes("field_commissioner")),
   };
 }
 
 export async function getCommissionById(id: string) {
   const { db } = await loadReference();
+  const user = await getCurrentUser();
   const rows = await db.select().from(schema.fieldCommissions).where(eq(schema.fieldCommissions.id, id));
-  return (await loadCommissions(db, rows))[0];
+  const commission = (await loadCommissions(db, rows))[0];
+  if (!commission || !canAccessCommission(user, commission)) {
+    return undefined;
+  }
+  return commission;
 }
 
 // ---------------------------------------------------------------------------
@@ -581,6 +637,10 @@ export async function getReportDefinitions() {
 
 export async function getAuditLogs(): Promise<AuditLog[]> {
   const { db } = await loadReference();
+  const user = await getCurrentUser();
+  if (!hasAnyPermission(user, ["read:audit", "audit", "*"])) {
+    return [];
+  }
   const rows = await db.select().from(schema.auditLogs).orderBy(desc(schema.auditLogs.createdAt)).limit(200);
   return rows.map((row) => ({
     id: row.id,

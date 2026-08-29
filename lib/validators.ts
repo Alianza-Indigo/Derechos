@@ -75,3 +75,64 @@ export const aiRunSchema = z.object({
   relatedEventId: z.string().optional(),
   fieldCommissionId: z.string().optional(),
 });
+
+export const memberUpdateSchema = memberFormSchema.extend({
+  id: z.string().min(1),
+});
+
+export const caseStatusSchema = z.object({
+  caseId: z.string().min(1),
+  status: z.enum(caseStatuses),
+  priority: z.enum(priorities),
+});
+
+export const caseActionSchema = z.object({
+  caseId: z.string().min(1),
+  actionType: z.string().min(3, "Describe el tipo de accion."),
+  description: z.string().min(5, "Describe la accion."),
+  dueDate: z.string().optional(),
+});
+
+export const eventUpdateSchema = eventFormSchema.extend({
+  id: z.string().min(1),
+});
+
+export const commissionUpdateSchema = z.object({
+  id: z.string().min(1),
+  status: z.enum(["programada", "activa", "pausada", "completada", "cancelada"]),
+  description: z.string().min(10),
+});
+
+export const prevalenceRecordSchema = z.object({
+  studyId: z.string().min(1, "Selecciona estudio."),
+  metricId: z.string().min(1, "Selecciona indicador."),
+  territoryId: z.string().min(1, "Selecciona territorio."),
+  valueNumeric: z.coerce.number().optional(),
+  sampleSize: z.coerce.number().int().nonnegative().optional(),
+  source: z.string().min(3, "Captura la fuente."),
+  measuredAt: z.string().min(1, "Captura la fecha de medicion."),
+});
+
+export const organizationSchema = z.object({
+  name: z.string().min(2, "Captura el nombre publico."),
+  legalName: z.string().optional(),
+  country: z.string().min(2),
+  primaryColor: z.string().regex(/^#[0-9a-fA-F]{6}$/, "Usa un color hexadecimal (#RRGGBB)."),
+  geolocationEnabled: z.coerce.boolean().default(false),
+  aiEnabled: z.coerce.boolean().default(false),
+});
+
+export const locationSettingSchema = z.object({
+  id: z.string().min(1),
+  enabled: z.coerce.boolean().default(false),
+  mode: z.enum(["disabled", "manual_check_in", "during_commission", "active_shift"]),
+  retentionDays: z.coerce.number().int().min(1).max(365),
+});
+
+export const providerSchema = z.object({
+  id: z.string().min(1),
+  enabled: z.coerce.boolean().default(false),
+  defaultModel: z.string().min(2, "Captura el modelo por defecto."),
+  priority: z.coerce.number().int().min(1).max(99),
+  apiKey: z.string().optional(),
+});

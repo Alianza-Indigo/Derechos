@@ -1,30 +1,49 @@
 "use server";
 
 import { redirect } from "next/navigation";
+import { revalidatePath } from "next/cache";
 import { eq, or } from "drizzle-orm";
 import {
+  aiProviderConfigs,
   aiPromptTemplates,
-  cases,
+  caseActions,
+  caseEvidence,
   casePeople,
+  cases,
   delegateLocationPings,
   events,
   fieldCommissions,
+  locationTrackingSettings,
   memberCredentials,
   members,
+  organizations,
+  prevalenceRecords,
 } from "@/drizzle/schema";
 import { runAssistant } from "@/lib/ai/adapters";
+import { uploadEvidenceFile } from "@/lib/storage";
 import {
   aiRunSchema,
+  caseActionSchema,
   caseFormSchema,
+  caseStatusSchema,
   checkInSchema,
   commissionFormSchema,
+  commissionUpdateSchema,
   eventFormSchema,
+  eventUpdateSchema,
+  locationSettingSchema,
   memberFormSchema,
+  memberUpdateSchema,
+  organizationSchema,
+  prevalenceRecordSchema,
   promptTemplateSchema,
+  providerSchema,
 } from "@/lib/validators";
 import { writeAuditLog } from "@/server/audit/log";
 import { getDb } from "@/server/db";
+import { canAccessTerritory, hasAnyPermission } from "@/server/permissions/rbac";
 import { getCurrentUser, getPromptRecordById, nextCaseNumber, nextMemberNumber } from "@/server/queries/app";
+import type { User } from "@/lib/types";
 
 type ActionResult = {
   ok: boolean;
@@ -32,11 +51,26 @@ type ActionResult = {
   output?: string;
 };
 
+const DENIED: ActionResult = { ok: false, message: "No tienes permiso para realizar esta accion." };
+
+function can(user: User, permissions: string[]) {
+  return hasAnyPermission(user, [...permissions, "*"]);
+}
+
+// --------------------------------------------------------------------------
+// Miembros
+// --------------------------------------------------------------------------
 export async function createMemberAction(_: ActionResult | null, formData: FormData): Promise<ActionResult> {
   const user = await getCurrentUser();
+  if (!can(user, ["write:territory", "write:limited"])) {
+    return DENIED;
+  }
   const parsed = memberFormSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) {
     return { ok: false, message: parsed.error.issues[0]?.message ?? "Datos invalidos." };
+  }
+  if (!canAccessTerritory(user, parsed.data.territoryId)) {
+    return { ok: false, message: "No puedes registrar miembros fuera de tu territorio." };
   }
 
   const db = getDb();
@@ -77,8 +111,52 @@ export async function createMemberAction(_: ActionResult | null, formData: FormD
   redirect(`/miembros/${inserted.id}`);
 }
 
+export async function updateMemberAction(_: ActionResult | null, formData: FormData): Promise<ActionResult> {
+  const user = await getCurrentUser();
+  if (!can(user, ["write:territory", "write:limited"])) {
+    return DENIED;
+  }
+  const parsed = memberUpdateSchema.safeParse(Object.fromEntries(formData));
+  if (!parsed.success) {
+    return { ok: false, message: parsed.error.issues[0]?.message ?? "Datos invalidos." };
+  }
+
+  const db = getDb();
+  const existing = (await db.select().from(members).where(eq(members.id, parsed.data.id)))[0];
+  if (!existing || !canAccessTerritory(user, existing.territoryId)) {
+    return { ok: false, message: "Miembro no encontrado o fuera de tu territorio." };
+  }
+  if (!canAccessTerritory(user, parsed.data.territoryId)) {
+    return { ok: false, message: "No puedes mover el miembro a ese territorio." };
+  }
+
+  await db
+    .update(members)
+    .set({
+      fullName: parsed.data.fullName,
+      birthDate: new Date(parsed.data.birthDate),
+      gender: parsed.data.gender,
+      phone: parsed.data.phone,
+      email: parsed.data.email,
+      address: parsed.data.address,
+      territoryId: parsed.data.territoryId,
+      status: parsed.data.status,
+      updatedAt: new Date(),
+    })
+    .where(eq(members.id, parsed.data.id));
+
+  await writeAuditLog({ actorId: user.id, action: "member.update", entityType: "member", entityId: parsed.data.id, before: { status: existing.status }, after: parsed.data });
+  redirect(`/miembros/${parsed.data.id}`);
+}
+
+// --------------------------------------------------------------------------
+// Casos
+// --------------------------------------------------------------------------
 export async function createCaseAction(_: ActionResult | null, formData: FormData): Promise<ActionResult> {
   const user = await getCurrentUser();
+  if (!can(user, ["write:case", "write:territory"])) {
+    return DENIED;
+  }
   const parsed = caseFormSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) {
     return { ok: false, message: parsed.error.issues[0]?.message ?? "Datos invalidos." };
@@ -114,8 +192,119 @@ export async function createCaseAction(_: ActionResult | null, formData: FormDat
   redirect(`/casos/${inserted.id}`);
 }
 
+async function assertCaseAccess(user: User, caseId: string) {
+  const db = getDb();
+  const record = (await db.select().from(cases).where(eq(cases.id, caseId)))[0];
+  if (!record) {
+    return null;
+  }
+  const allowed = canAccessTerritory(user, record.territoryId) || record.assignedTo === user.id || record.openedBy === user.id;
+  return allowed ? record : null;
+}
+
+export async function changeCaseStatusAction(_: ActionResult | null, formData: FormData): Promise<ActionResult> {
+  const user = await getCurrentUser();
+  if (!can(user, ["write:case", "write:territory"])) {
+    return DENIED;
+  }
+  const parsed = caseStatusSchema.safeParse(Object.fromEntries(formData));
+  if (!parsed.success) {
+    return { ok: false, message: parsed.error.issues[0]?.message ?? "Datos invalidos." };
+  }
+  const record = await assertCaseAccess(user, parsed.data.caseId);
+  if (!record) {
+    return { ok: false, message: "Caso no encontrado o sin acceso." };
+  }
+
+  const db = getDb();
+  await db
+    .update(cases)
+    .set({
+      status: parsed.data.status,
+      priority: parsed.data.priority,
+      closedAt: ["Resuelto", "Cerrado sin accion", "Archivado"].includes(parsed.data.status) ? new Date() : null,
+      updatedAt: new Date(),
+    })
+    .where(eq(cases.id, parsed.data.caseId));
+
+  await writeAuditLog({ actorId: user.id, action: "case.status_change", entityType: "case", entityId: parsed.data.caseId, before: { status: record.status }, after: { status: parsed.data.status, priority: parsed.data.priority } });
+  revalidatePath(`/casos/${parsed.data.caseId}`);
+  return { ok: true, message: "Estado del caso actualizado." };
+}
+
+export async function addCaseActionAction(_: ActionResult | null, formData: FormData): Promise<ActionResult> {
+  const user = await getCurrentUser();
+  if (!can(user, ["write:case", "write:territory"])) {
+    return DENIED;
+  }
+  const parsed = caseActionSchema.safeParse(Object.fromEntries(formData));
+  if (!parsed.success) {
+    return { ok: false, message: parsed.error.issues[0]?.message ?? "Datos invalidos." };
+  }
+  const record = await assertCaseAccess(user, parsed.data.caseId);
+  if (!record) {
+    return { ok: false, message: "Caso no encontrado o sin acceso." };
+  }
+
+  const db = getDb();
+  await db.insert(caseActions).values({
+    caseId: parsed.data.caseId,
+    actionType: parsed.data.actionType,
+    description: parsed.data.description,
+    dueDate: parsed.data.dueDate ? new Date(parsed.data.dueDate) : null,
+    createdBy: user.id,
+  });
+
+  await writeAuditLog({ actorId: user.id, action: "case.action_add", entityType: "case", entityId: parsed.data.caseId, after: { actionType: parsed.data.actionType } });
+  revalidatePath(`/casos/${parsed.data.caseId}`);
+  return { ok: true, message: "Accion agregada al timeline del caso." };
+}
+
+export async function addCaseEvidenceAction(_: ActionResult | null, formData: FormData): Promise<ActionResult> {
+  const user = await getCurrentUser();
+  if (!can(user, ["write:case", "write:territory"])) {
+    return DENIED;
+  }
+  const caseId = String(formData.get("caseId") ?? "");
+  const description = String(formData.get("description") ?? "").trim();
+  const file = formData.get("file");
+  if (!caseId || !description || !(file instanceof File) || file.size === 0) {
+    return { ok: false, message: "Adjunta un archivo y una descripcion." };
+  }
+  const record = await assertCaseAccess(user, caseId);
+  if (!record) {
+    return { ok: false, message: "Caso no encontrado o sin acceso." };
+  }
+
+  let uploaded: { url: string; contentType: string };
+  try {
+    uploaded = await uploadEvidenceFile(`casos/${caseId}`, file);
+  } catch (error) {
+    return { ok: false, message: error instanceof Error ? error.message : "No se pudo subir el archivo." };
+  }
+
+  const db = getDb();
+  await db.insert(caseEvidence).values({
+    caseId,
+    fileUrl: uploaded.url,
+    fileType: uploaded.contentType,
+    description,
+    uploadedBy: user.id,
+  });
+
+  await writeAuditLog({ actorId: user.id, action: "case.evidence_add", entityType: "case", entityId: caseId, after: { fileType: uploaded.contentType } });
+  revalidatePath(`/casos/${caseId}`);
+  return { ok: true, message: "Evidencia registrada." };
+}
+
+// --------------------------------------------------------------------------
+// Eventos
+// --------------------------------------------------------------------------
 export async function createEventAction(_: ActionResult | null, formData: FormData): Promise<ActionResult> {
   const user = await getCurrentUser();
+  if (!can(user, ["write:event", "write:territory"])) {
+    return DENIED;
+  }
   const parsed = eventFormSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) {
     return { ok: false, message: parsed.error.issues[0]?.message ?? "Datos invalidos." };
@@ -144,8 +333,50 @@ export async function createEventAction(_: ActionResult | null, formData: FormDa
   redirect(`/eventos/${inserted.id}`);
 }
 
+export async function updateEventAction(_: ActionResult | null, formData: FormData): Promise<ActionResult> {
+  const user = await getCurrentUser();
+  if (!can(user, ["write:event", "write:territory"])) {
+    return DENIED;
+  }
+  const parsed = eventUpdateSchema.safeParse(Object.fromEntries(formData));
+  if (!parsed.success) {
+    return { ok: false, message: parsed.error.issues[0]?.message ?? "Datos invalidos." };
+  }
+
+  const db = getDb();
+  const existing = (await db.select().from(events).where(eq(events.id, parsed.data.id)))[0];
+  if (!existing || !canAccessTerritory(user, existing.territoryId)) {
+    return { ok: false, message: "Evento no encontrado o sin acceso." };
+  }
+
+  await db
+    .update(events)
+    .set({
+      title: parsed.data.title,
+      description: parsed.data.description,
+      eventType: parsed.data.eventType,
+      dateStart: new Date(parsed.data.dateStart),
+      dateEnd: new Date(parsed.data.dateEnd),
+      location: parsed.data.location,
+      territoryId: parsed.data.territoryId,
+      attendeesCount: parsed.data.attendeesCount,
+      impactSummary: parsed.data.impactSummary,
+      updatedAt: new Date(),
+    })
+    .where(eq(events.id, parsed.data.id));
+
+  await writeAuditLog({ actorId: user.id, action: "event.update", entityType: "event", entityId: parsed.data.id, after: parsed.data });
+  redirect(`/eventos/${parsed.data.id}`);
+}
+
+// --------------------------------------------------------------------------
+// Comisiones y check-ins
+// --------------------------------------------------------------------------
 export async function createCommissionAction(_: ActionResult | null, formData: FormData): Promise<ActionResult> {
   const user = await getCurrentUser();
+  if (!can(user, ["write:field", "write:territory"])) {
+    return DENIED;
+  }
   const parsed = commissionFormSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) {
     return { ok: false, message: parsed.error.issues[0]?.message ?? "Datos invalidos." };
@@ -169,8 +400,42 @@ export async function createCommissionAction(_: ActionResult | null, formData: F
   redirect(`/operacion-territorial/comisiones/${inserted.id}`);
 }
 
+export async function updateCommissionAction(_: ActionResult | null, formData: FormData): Promise<ActionResult> {
+  const user = await getCurrentUser();
+  if (!can(user, ["write:field", "write:territory"])) {
+    return DENIED;
+  }
+  const parsed = commissionUpdateSchema.safeParse(Object.fromEntries(formData));
+  if (!parsed.success) {
+    return { ok: false, message: parsed.error.issues[0]?.message ?? "Datos invalidos." };
+  }
+
+  const db = getDb();
+  const existing = (await db.select().from(fieldCommissions).where(eq(fieldCommissions.id, parsed.data.id)))[0];
+  if (!existing || !(canAccessTerritory(user, existing.territoryId) || existing.assignedTo === user.id)) {
+    return { ok: false, message: "Comision no encontrada o sin acceso." };
+  }
+
+  await db
+    .update(fieldCommissions)
+    .set({
+      status: parsed.data.status,
+      description: parsed.data.description,
+      completedAt: parsed.data.status === "completada" ? new Date() : existing.completedAt,
+      updatedAt: new Date(),
+    })
+    .where(eq(fieldCommissions.id, parsed.data.id));
+
+  await writeAuditLog({ actorId: user.id, action: "commission.update", entityType: "field_commission", entityId: parsed.data.id, after: { status: parsed.data.status } });
+  revalidatePath(`/operacion-territorial/comisiones/${parsed.data.id}`);
+  return { ok: true, message: "Comision actualizada." };
+}
+
 export async function createCheckInAction(_: ActionResult | null, formData: FormData): Promise<ActionResult> {
   const user = await getCurrentUser();
+  if (!can(user, ["location:checkin", "write:field"])) {
+    return DENIED;
+  }
   const parsed = checkInSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) {
     return { ok: false, message: parsed.error.issues[0]?.message ?? "Ubicacion invalida." };
@@ -199,11 +464,47 @@ export async function createCheckInAction(_: ActionResult | null, formData: Form
     entityId: inserted.id,
     after: { ...parsed.data, latitude: "redacted", longitude: "redacted" },
   });
+  revalidatePath("/operacion-territorial/geolocalizacion");
   return { ok: true, message: "Check-in registrado con ubicacion autorizada y auditoria." };
 }
 
+// --------------------------------------------------------------------------
+// Prevalencia
+// --------------------------------------------------------------------------
+export async function createPrevalenceRecordAction(_: ActionResult | null, formData: FormData): Promise<ActionResult> {
+  const user = await getCurrentUser();
+  if (!can(user, ["write:territory", "write:limited"])) {
+    return DENIED;
+  }
+  const parsed = prevalenceRecordSchema.safeParse(Object.fromEntries(formData));
+  if (!parsed.success) {
+    return { ok: false, message: parsed.error.issues[0]?.message ?? "Datos invalidos." };
+  }
+
+  const db = getDb();
+  await db.insert(prevalenceRecords).values({
+    studyId: parsed.data.studyId,
+    metricId: parsed.data.metricId,
+    territoryId: parsed.data.territoryId,
+    valueNumeric: parsed.data.valueNumeric === undefined ? null : String(parsed.data.valueNumeric),
+    sampleSize: parsed.data.sampleSize ?? null,
+    source: parsed.data.source,
+    measuredAt: new Date(parsed.data.measuredAt),
+  });
+
+  await writeAuditLog({ actorId: user.id, action: "prevalence.capture", entityType: "prevalence_record", entityId: parsed.data.metricId, after: { territoryId: parsed.data.territoryId, source: parsed.data.source } });
+  revalidatePath("/prevalencia");
+  return { ok: true, message: "Medicion de prevalencia registrada." };
+}
+
+// --------------------------------------------------------------------------
+// Asistente IA
+// --------------------------------------------------------------------------
 export async function runAssistantAction(_: ActionResult | null, formData: FormData): Promise<ActionResult> {
   const user = await getCurrentUser();
+  if (!can(user, ["ai:use", "ai:admin"])) {
+    return DENIED;
+  }
   const parsed = aiRunSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) {
     return { ok: false, message: parsed.error.issues[0]?.message ?? "Solicitud invalida." };
@@ -239,6 +540,9 @@ export async function runAssistantAction(_: ActionResult | null, formData: FormD
 
 export async function savePromptAction(_: ActionResult | null, formData: FormData): Promise<ActionResult> {
   const user = await getCurrentUser();
+  if (!can(user, ["ai:admin", "write:config"])) {
+    return DENIED;
+  }
   const parsed = promptTemplateSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) {
     return { ok: false, message: parsed.error.issues[0]?.message ?? "Prompt invalido." };
@@ -267,8 +571,102 @@ export async function savePromptAction(_: ActionResult | null, formData: FormDat
   redirect("/asistente/prompts");
 }
 
+export async function updateProviderAction(_: ActionResult | null, formData: FormData): Promise<ActionResult> {
+  const user = await getCurrentUser();
+  if (!can(user, ["ai:admin", "write:config"])) {
+    return DENIED;
+  }
+  const parsed = providerSchema.safeParse(Object.fromEntries(formData));
+  if (!parsed.success) {
+    return { ok: false, message: parsed.error.issues[0]?.message ?? "Datos invalidos." };
+  }
+
+  const db = getDb();
+  const apiKey = parsed.data.apiKey?.trim();
+  await db
+    .update(aiProviderConfigs)
+    .set({
+      enabled: parsed.data.enabled,
+      defaultModel: parsed.data.defaultModel,
+      priority: parsed.data.priority,
+      ...(apiKey ? { apiKey } : {}),
+      updatedBy: user.id,
+      updatedAt: new Date(),
+    })
+    .where(eq(aiProviderConfigs.id, parsed.data.id));
+
+  await writeAuditLog({ actorId: user.id, action: "provider.update", entityType: "ai_provider_config", entityId: parsed.data.id, after: { enabled: parsed.data.enabled, defaultModel: parsed.data.defaultModel, apiKeyChanged: Boolean(apiKey) } });
+  revalidatePath("/asistente/proveedores");
+  return { ok: true, message: "Proveedor actualizado." };
+}
+
+// --------------------------------------------------------------------------
+// Configuracion institucional
+// --------------------------------------------------------------------------
+export async function updateOrganizationAction(_: ActionResult | null, formData: FormData): Promise<ActionResult> {
+  const user = await getCurrentUser();
+  if (!can(user, ["write:config"])) {
+    return DENIED;
+  }
+  const parsed = organizationSchema.safeParse(Object.fromEntries(formData));
+  if (!parsed.success) {
+    return { ok: false, message: parsed.error.issues[0]?.message ?? "Datos invalidos." };
+  }
+
+  const db = getDb();
+  const existing = (await db.select({ id: organizations.id }).from(organizations).limit(1))[0];
+  const values = {
+    name: parsed.data.name,
+    legalName: parsed.data.legalName || null,
+    country: parsed.data.country,
+    primaryColor: parsed.data.primaryColor,
+    geolocationEnabled: parsed.data.geolocationEnabled,
+    aiEnabled: parsed.data.aiEnabled,
+    updatedAt: new Date(),
+  };
+  if (existing) {
+    await db.update(organizations).set(values).where(eq(organizations.id, existing.id));
+  } else {
+    await db.insert(organizations).values(values);
+  }
+
+  await writeAuditLog({ actorId: user.id, action: "organization.update", entityType: "organization", entityId: existing?.id ?? "org", after: values });
+  revalidatePath("/configuracion");
+  return { ok: true, message: "Configuracion institucional actualizada." };
+}
+
+export async function updateLocationSettingAction(_: ActionResult | null, formData: FormData): Promise<ActionResult> {
+  const user = await getCurrentUser();
+  if (!can(user, ["write:config"])) {
+    return DENIED;
+  }
+  const parsed = locationSettingSchema.safeParse(Object.fromEntries(formData));
+  if (!parsed.success) {
+    return { ok: false, message: parsed.error.issues[0]?.message ?? "Datos invalidos." };
+  }
+
+  const db = getDb();
+  await db
+    .update(locationTrackingSettings)
+    .set({
+      enabled: parsed.data.enabled,
+      mode: parsed.data.mode,
+      retentionDays: parsed.data.retentionDays,
+      updatedBy: user.id,
+      updatedAt: new Date(),
+    })
+    .where(eq(locationTrackingSettings.id, parsed.data.id));
+
+  await writeAuditLog({ actorId: user.id, action: "location_setting.update", entityType: "location_tracking_setting", entityId: parsed.data.id, after: { enabled: parsed.data.enabled, mode: parsed.data.mode, retentionDays: parsed.data.retentionDays } });
+  revalidatePath("/configuracion");
+  return { ok: true, message: "Ajuste de ubicacion actualizado." };
+}
+
 export async function exportReportAction(formData: FormData) {
   const user = await getCurrentUser();
+  if (!can(user, ["reports:export"])) {
+    return DENIED;
+  }
   await writeAuditLog({
     actorId: user.id,
     action: "report.export",

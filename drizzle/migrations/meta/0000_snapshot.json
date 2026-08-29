@@ -1,5 +1,5 @@
 {
-  "id": "7440c86e-20cc-4d2a-ad29-8610d308080d",
+  "id": "1f1c3ecf-f571-4704-97c2-c51210a0f8b1",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -471,6 +471,12 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true
+        },
+        "api_key": {
+          "name": "api_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
         },
         "priority": {
           "name": "priority",

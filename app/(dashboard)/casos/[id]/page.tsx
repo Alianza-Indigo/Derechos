@@ -3,13 +3,17 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardHeader } from "@/components/ui/card";
 import { DataTable } from "@/components/ui/table";
 import { LinkButton } from "@/components/ui/button";
+import { CaseManagement } from "@/components/cases/case-management";
 import { formatDate } from "@/lib/utils";
-import { getCaseById, getTerritoryName, getUserName } from "@/server/queries/app";
+import { getCaseById, getCurrentUser, getTerritoryName, getUserName } from "@/server/queries/app";
+import { hasAnyPermission } from "@/server/permissions/rbac";
 
 export default async function CaseDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const record = await getCaseById(id);
   if (!record) notFound();
+  const user = await getCurrentUser();
+  const canWrite = hasAnyPermission(user, ["write:case", "write:territory", "*"]);
   return (
     <div className="space-y-6">
       <Card>
@@ -24,6 +28,7 @@ export default async function CaseDetailPage({ params }: { params: Promise<{ id:
         </div>
         <p className="mt-5 text-sm leading-6 text-slate-700">{record.description}</p>
       </Card>
+      {canWrite ? <CaseManagement caseId={record.id} status={record.status} priority={record.priority} /> : null}
       <section className="grid gap-6 xl:grid-cols-2">
         <Card>
           <CardHeader title="Personas involucradas y consentimiento" />
