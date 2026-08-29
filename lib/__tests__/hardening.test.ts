@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { intensityStyle } from "@/lib/intensity";
-import { aiFeedbackSchema, credentialActionSchema, locationPurgeSchema } from "@/lib/validators";
+import { aiFeedbackSchema, credentialActionSchema, locationPurgeSchema, roleAssignmentSchema, userFormSchema } from "@/lib/validators";
 
 describe("endurecimiento del review", () => {
   it("escala la intensidad del mapa por valor y maximo", () => {
@@ -36,5 +36,18 @@ describe("endurecimiento del review", () => {
     expect(locationPurgeSchema.safeParse({ scope: "all" }).success).toBe(true);
     expect(locationPurgeSchema.safeParse({ scope: "territory", territoryId: "t1" }).success).toBe(true);
     expect(locationPurgeSchema.safeParse({ scope: "invalid" }).success).toBe(false);
+  });
+
+  it("valida el alta de usuario y su rol", () => {
+    const ok = userFormSchema.safeParse({ name: "Ana Lopez", email: "ana@org.mx", password: "12345678", role: "case_manager" });
+    expect(ok.success).toBe(true);
+    expect(userFormSchema.safeParse({ name: "Ana", email: "ana@org.mx", password: "corta", role: "case_manager" }).success).toBe(false);
+    expect(userFormSchema.safeParse({ name: "Ana Lopez", email: "ana@org.mx", password: "12345678", role: "rol_falso" }).success).toBe(false);
+  });
+
+  it("valida la asignacion de roles", () => {
+    expect(roleAssignmentSchema.safeParse({ userId: "u1", role: "super_admin" }).success).toBe(true);
+    expect(roleAssignmentSchema.safeParse({ userId: "u1", role: "state_coordination", territoryId: "t1" }).success).toBe(true);
+    expect(roleAssignmentSchema.safeParse({ userId: "u1", role: "no_existe" }).success).toBe(false);
   });
 });

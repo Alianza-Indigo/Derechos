@@ -1,5 +1,20 @@
 import { z } from "zod";
 import { caseCategories, caseStatuses, eventTypes, priorities, promptScopes } from "@/lib/constants";
+import type { RoleKey } from "@/lib/types";
+
+const roleKeyValues = [
+  "super_admin",
+  "national_direction",
+  "state_coordination",
+  "municipal_coordination",
+  "territorial_delegate",
+  "field_commissioner",
+  "case_manager",
+  "events_team",
+  "data_entry",
+  "member",
+  "auditor",
+] as const satisfies readonly RoleKey[];
 
 const formBoolean = z.union([z.boolean(), z.enum(["true", "false", "on", "1", "0"])]).transform((value) => {
   if (typeof value === "boolean") {
@@ -194,6 +209,34 @@ export const aiFeedbackSchema = z.object({
 export const credentialActionSchema = z.object({
   memberId: z.string().min(1),
   action: z.enum(["revoke", "renew", "suspend"]),
+});
+
+export const userFormSchema = z.object({
+  name: z.string().min(3, "Captura el nombre completo."),
+  email: z.email("Captura un correo valido."),
+  phone: z.string().optional(),
+  password: z.string().min(8, "La contrasena debe tener al menos 8 caracteres."),
+  role: z.enum(roleKeyValues),
+  territoryId: z.string().optional(),
+  status: z.enum(["active", "disabled", "pending"]).default("active"),
+});
+
+export const userStatusSchema = z.object({
+  userId: z.string().min(1),
+  status: z.enum(["active", "disabled", "pending"]),
+});
+
+export const roleAssignmentSchema = z.object({
+  userId: z.string().min(1),
+  role: z.enum(roleKeyValues),
+  territoryId: z.string().optional(),
+});
+
+export const roleRemovalSchema = z.object({
+  userId: z.string().min(1),
+  role: z.enum(roleKeyValues),
+  scopeType: z.enum(["global", "territory"]),
+  scopeId: z.string().optional(),
 });
 
 export const locationPurgeSchema = z.object({

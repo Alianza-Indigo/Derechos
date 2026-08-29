@@ -2,6 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
+import { hash } from "bcryptjs";
 import { and, eq, lt, sql, type SQL } from "drizzle-orm";
 import * as schema from "@/drizzle/schema";
 import { runAssistant } from "@/lib/ai/adapters";
@@ -25,10 +26,14 @@ import {
   metricSchema,
   organizationSchema,
   prevalenceRecordSchema,
+  roleAssignmentSchema,
+  roleRemovalSchema,
   studySchema,
   territoryLocationSchema,
   providerConfigSchema,
   promptTemplateSchema,
+  userFormSchema,
+  userStatusSchema,
 } from "@/lib/validators";
 import { writeAuditLog } from "@/server/audit/log";
 import { getDb } from "@/server/db";
@@ -1017,6 +1022,134 @@ export async function purgeLocationHistoryAction(_: ActionResult | null, formDat
   revalidatePath("/configuracion");
   revalidatePath("/operacion-territorial/geolocalizacion");
   return { ok: true, message: `Se eliminaron ${result.length} registros de ubicacion.` };
+}
+
+// --------------------------------------------------------------------------
+// Administracion de usuarios y roles (solo * / write:config)
+// --------------------------------------------------------------------------
+async function resolveRoleId(db: ReturnType<typeof getDb>, key: string) {
+  const [role] = await db.select({ id: schema.roles.id }).from(schema.roles).where(eq(schema.roles.key, key)).limit(1);
+  return role?.id;
+}
+
+export async function createUserAction(_: ActionResult | null, formData: FormData): Promise<ActionResult> {
+  const user = await getCurrentUser();
+  if (!can(user, ["write:config", "*"])) {
+    return DENIED;
+  }
+  const parsed = userFormSchema.safeParse(Object.fromEntries(formData));
+  if (!parsed.success) {
+    return { ok: false, message: parsed.error.issues[0]?.message ?? "Datos invalidos." };
+  }
+  const email = parsed.data.email.toLowerCase();
+  const db = getDb();
+  const existing = await db.select({ id: schema.users.id }).from(schema.users).where(eq(schema.users.email, email)).limit(1);
+  if (existing.length) {
+    return { ok: false, message: "Ya existe un usuario con ese correo." };
+  }
+  const roleId = await resolveRoleId(db, parsed.data.role);
+  if (!roleId) {
+    return { ok: false, message: "El rol seleccionado no existe." };
+  }
+  const id = crypto.randomUUID();
+  await db.insert(schema.users).values({
+    id,
+    name: parsed.data.name,
+    email,
+    phone: parsed.data.phone || null,
+    passwordHash: await hash(parsed.data.password, 12),
+    providerId: null,
+    status: parsed.data.status,
+  });
+  const scoped = Boolean(parsed.data.territoryId);
+  await db.insert(schema.userRoles).values({
+    userId: id,
+    roleId,
+    scopeType: scoped ? "territory" : "global",
+    scopeId: scoped ? parsed.data.territoryId! : null,
+  }).onConflictDoNothing();
+  await writeAuditLog({ actorId: user.id, action: "user.create", entityType: "user", entityId: id, after: { email, role: parsed.data.role, status: parsed.data.status } });
+  revalidatePath("/configuracion/usuarios");
+  return { ok: true, message: "Usuario creado." };
+}
+
+export async function setUserStatusAction(_: ActionResult | null, formData: FormData): Promise<ActionResult> {
+  const user = await getCurrentUser();
+  if (!can(user, ["write:config", "*"])) {
+    return DENIED;
+  }
+  const parsed = userStatusSchema.safeParse(Object.fromEntries(formData));
+  if (!parsed.success) {
+    return { ok: false, message: parsed.error.issues[0]?.message ?? "Datos invalidos." };
+  }
+  if (parsed.data.userId === user.id && parsed.data.status !== "active") {
+    return { ok: false, message: "No puedes desactivar tu propia cuenta." };
+  }
+  const db = getDb();
+  await db.update(schema.users).set({ status: parsed.data.status, updatedAt: new Date() }).where(eq(schema.users.id, parsed.data.userId));
+  await writeAuditLog({ actorId: user.id, action: "user.status_change", entityType: "user", entityId: parsed.data.userId, after: { status: parsed.data.status } });
+  revalidatePath("/configuracion/usuarios");
+  return { ok: true, message: `Usuario ${parsed.data.status === "active" ? "activado" : "desactivado"}.` };
+}
+
+export async function assignUserRoleAction(_: ActionResult | null, formData: FormData): Promise<ActionResult> {
+  const user = await getCurrentUser();
+  if (!can(user, ["write:config", "*"])) {
+    return DENIED;
+  }
+  const parsed = roleAssignmentSchema.safeParse(Object.fromEntries(formData));
+  if (!parsed.success) {
+    return { ok: false, message: parsed.error.issues[0]?.message ?? "Datos invalidos." };
+  }
+  const db = getDb();
+  const roleId = await resolveRoleId(db, parsed.data.role);
+  if (!roleId) {
+    return { ok: false, message: "El rol seleccionado no existe." };
+  }
+  const scoped = Boolean(parsed.data.territoryId);
+  await db.insert(schema.userRoles).values({
+    userId: parsed.data.userId,
+    roleId,
+    scopeType: scoped ? "territory" : "global",
+    scopeId: scoped ? parsed.data.territoryId! : null,
+  }).onConflictDoUpdate({
+    target: [schema.userRoles.userId, schema.userRoles.roleId, schema.userRoles.scopeType],
+    set: { scopeId: scoped ? parsed.data.territoryId! : null },
+  });
+  await writeAuditLog({ actorId: user.id, action: "user.role_assign", entityType: "user", entityId: parsed.data.userId, after: { role: parsed.data.role, territoryId: parsed.data.territoryId ?? null } });
+  revalidatePath("/configuracion/usuarios");
+  return { ok: true, message: "Rol asignado." };
+}
+
+export async function removeUserRoleAction(_: ActionResult | null, formData: FormData): Promise<ActionResult> {
+  const user = await getCurrentUser();
+  if (!can(user, ["write:config", "*"])) {
+    return DENIED;
+  }
+  const parsed = roleRemovalSchema.safeParse(Object.fromEntries(formData));
+  if (!parsed.success) {
+    return { ok: false, message: parsed.error.issues[0]?.message ?? "Datos invalidos." };
+  }
+  if (parsed.data.userId === user.id && parsed.data.role === "super_admin") {
+    return { ok: false, message: "No puedes quitarte a ti mismo el rol de super administrador." };
+  }
+  const db = getDb();
+  const roleId = await resolveRoleId(db, parsed.data.role);
+  if (!roleId) {
+    return { ok: false, message: "El rol seleccionado no existe." };
+  }
+  const conditions: SQL[] = [
+    eq(schema.userRoles.userId, parsed.data.userId),
+    eq(schema.userRoles.roleId, roleId),
+    eq(schema.userRoles.scopeType, parsed.data.scopeType),
+  ];
+  if (parsed.data.scopeId) {
+    conditions.push(eq(schema.userRoles.scopeId, parsed.data.scopeId));
+  }
+  await db.delete(schema.userRoles).where(and(...conditions));
+  await writeAuditLog({ actorId: user.id, action: "user.role_remove", entityType: "user", entityId: parsed.data.userId, after: { role: parsed.data.role, scopeType: parsed.data.scopeType } });
+  revalidatePath("/configuracion/usuarios");
+  return { ok: true, message: "Rol removido." };
 }
 
 function nextYear() {

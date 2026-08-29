@@ -1,4 +1,5 @@
 import { Card, CardHeader } from "@/components/ui/card";
+import { LinkButton } from "@/components/ui/button";
 import { DataTable } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { LocationPurgeForm, LocationSettingsEditor, OrganizationForm, TerritoryLocationEditor } from "@/components/config/config-forms";
@@ -16,6 +17,15 @@ export default async function ConfigurationPage() {
 
   return (
     <div className="space-y-6">
+      {canConfig ? (
+        <Card>
+          <CardHeader
+            title="Administracion de usuarios y roles"
+            description="Alta de usuarios, asignacion de roles por territorio y activacion de cuentas."
+            action={<LinkButton href="/configuracion/usuarios">Administrar usuarios</LinkButton>}
+          />
+        </Card>
+      ) : null}
       <Card>
         <CardHeader title="Configuracion institucional" description="Nombre, razon social, logotipo, colores, pais base, IA y geolocalizacion." />
         {canConfig ? (

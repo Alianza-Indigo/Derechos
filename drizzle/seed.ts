@@ -1,4 +1,5 @@
 import { hash } from "bcryptjs";
+import { eq } from "drizzle-orm";
 import { roleLabels } from "@/lib/constants";
 import { stableUuid } from "@/lib/stable-id";
 import {
@@ -94,6 +95,40 @@ async function main() {
     scopeType: user.territoryId ? "territory" : "global",
     scopeId: user.territoryId ? stableUuid(user.territoryId) : null,
   })))).onConflictDoNothing();
+
+  // Super administrador desde variables de entorno: cuenta duena de la
+  // plataforma con acceso total (rol super_admin => permiso "*"). Se
+  // (re)crea en cada corrida del seed; su contrasena se sincroniza con
+  // SUPERADMIN_PASSWORD para que el owner nunca quede bloqueado.
+  const superEmail = process.env.SUPERADMIN_EMAIL?.trim().toLowerCase();
+  const superPassword = process.env.SUPERADMIN_PASSWORD;
+  if (superEmail && superPassword) {
+    const superHash = await hash(superPassword, 12);
+    await db.insert(schema.users).values({
+      id: stableUuid(`superadmin:${superEmail}`),
+      name: process.env.SUPERADMIN_NAME || "Super Administrador",
+      email: superEmail,
+      phone: null,
+      passwordHash: superHash,
+      providerId: null,
+      status: "active",
+    }).onConflictDoUpdate({
+      target: schema.users.email,
+      set: { passwordHash: superHash, status: "active" },
+    });
+    const [superUser] = await db.select({ id: schema.users.id }).from(schema.users).where(eq(schema.users.email, superEmail)).limit(1);
+    if (superUser) {
+      await db.insert(schema.userRoles).values({
+        userId: superUser.id,
+        roleId: roleIds.super_admin,
+        scopeType: "global",
+        scopeId: null,
+      }).onConflictDoNothing();
+    }
+    console.log(`Super administrador asegurado: ${superEmail}`);
+  } else {
+    console.log("SUPERADMIN_EMAIL/SUPERADMIN_PASSWORD no definidos: no se creo super admin desde env.");
+  }
 
   await db.insert(schema.members).values(members.map((member) => ({
     id: stableUuid(member.id),

@@ -254,6 +254,46 @@ export async function getUsers() {
   return rows.map((user) => dbUserToDomain(user, [], undefined));
 }
 
+export type AdminUserRow = {
+  id: string;
+  name: string;
+  email: string;
+  phone?: string;
+  status: "active" | "disabled" | "pending";
+  roles: Array<{ role: string; scopeType: string; scopeId?: string; scopeName: string }>;
+};
+
+// Listado de usuarios con sus roles y alcance, solo para administracion.
+export async function getUsersWithRoles(): Promise<AdminUserRow[]> {
+  await warmReference();
+  const user = await getCurrentUser();
+  if (!hasAnyPermission(user, ["*", "write:config"])) {
+    return [];
+  }
+  const db = getDb();
+  const [userRows, roleAssignments, roleRows] = await Promise.all([
+    db.select().from(schema.users),
+    db.select().from(schema.userRoles),
+    db.select().from(schema.roles),
+  ]);
+  const roleKeyById = new Map(roleRows.map((row) => [row.id, row.key]));
+  return userRows.map((row) => ({
+    id: row.id,
+    name: row.name,
+    email: row.email,
+    phone: row.phone ?? undefined,
+    status: row.status,
+    roles: roleAssignments
+      .filter((assignment) => assignment.userId === row.id)
+      .map((assignment) => ({
+        role: roleKeyById.get(assignment.roleId) ?? "desconocido",
+        scopeType: assignment.scopeType,
+        scopeId: assignment.scopeId ?? undefined,
+        scopeName: assignment.scopeId ? getTerritoryName(assignment.scopeId) : "Global",
+      })),
+  }));
+}
+
 export async function getOperationsData(options?: { audit?: boolean }) {
   const db = getDb();
   const user = await getCurrentUser();
