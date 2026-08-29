@@ -25,6 +25,7 @@ import {
   locationSettingSchema,
   memberAccessSchema,
   memberFormSchema,
+  memberPhotoSchema,
   memberProfileSchema,
   memberReportSchema,
   metricSchema,
@@ -1207,6 +1208,38 @@ export async function createMemberReportAction(_: ActionResult | null, formData:
   await writeAuditLog({ actorId: user.id, action: "case.member_report", entityType: "case", entityId: id, after: { caseNumber, category: parsed.data.category } });
   revalidatePath("/portal/mis-reportes");
   return { ok: true, message: `Reporte ${caseNumber} enviado. El equipo le dara seguimiento.` };
+}
+
+// Foto del miembro: la sube el propio miembro (sin memberId) o el personal
+// (con memberId, requiere write:territory y acceso al miembro).
+export async function updateMemberPhotoAction(_: ActionResult | null, formData: FormData): Promise<ActionResult> {
+  const actor = await getCurrentUser();
+  const parsed = memberPhotoSchema.safeParse(Object.fromEntries(formData));
+  if (!parsed.success) {
+    return { ok: false, message: parsed.error.issues[0]?.message ?? "Datos invalidos." };
+  }
+  const db = getDb();
+  let memberId = parsed.data.memberId;
+  if (memberId) {
+    if (!can(actor, ["write:territory", "*"])) {
+      return DENIED;
+    }
+    const member = await getMemberById(memberId);
+    if (!member) {
+      return { ok: false, message: "No tienes acceso a este miembro." };
+    }
+  } else {
+    const self = await getMemberSelf();
+    if (!self) {
+      return { ok: false, message: "Solo un miembro puede subir su propia fotografia." };
+    }
+    memberId = self.id;
+  }
+  await db.update(schema.members).set({ photoUrl: parsed.data.photoUrl, updatedAt: new Date() }).where(eq(schema.members.id, memberId));
+  await writeAuditLog({ actorId: actor.id, action: "member.photo_update", entityType: "member", entityId: memberId, after: { photoUrl: parsed.data.photoUrl } });
+  revalidatePath("/portal/perfil");
+  revalidatePath(`/miembros/${memberId}`);
+  return { ok: true, message: "Fotografia actualizada." };
 }
 
 export async function updateMemberProfileAction(_: ActionResult | null, formData: FormData): Promise<ActionResult> {

@@ -4,6 +4,7 @@ import { Card, CardHeader } from "@/components/ui/card";
 import { DataTable } from "@/components/ui/table";
 import { CredentialManager } from "@/components/forms/credential-manager";
 import { MemberAccessForm } from "@/components/forms/member-access";
+import { MemberPhotoUploader } from "@/components/portal/photo-uploader";
 import { credentialQrDataUrl, credentialUrl } from "@/lib/qr";
 import { formatDate } from "@/lib/utils";
 import { getCurrentUser, getMemberById, getTerritoryName } from "@/server/queries/app";
@@ -44,6 +45,12 @@ export default async function MemberDetailPage({ params }: { params: Promise<{ i
           <div className="mt-4 border-t border-slate-100 pt-4">
             <p className="mb-2 text-sm font-medium text-slate-700">Gestion de credencial</p>
             <CredentialManager memberId={member.id} status={member.credentialStatus} />
+          </div>
+        ) : null}
+        {canManage ? (
+          <div className="mt-4 border-t border-slate-100 pt-4">
+            <p className="mb-2 text-sm font-medium text-slate-700">Fotografia del miembro</p>
+            <MemberPhotoUploader memberId={member.id} currentPhoto={member.photoUrl} />
           </div>
         ) : null}
         {canManage ? (

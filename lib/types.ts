@@ -45,6 +45,7 @@ export type Member = {
   phone: string;
   email: string;
   address: string;
+  photoUrl?: string;
   territoryId: string;
   status: "pendiente" | "activo" | "suspendido" | "baja" | "fallecido";
   joinedAt: string;

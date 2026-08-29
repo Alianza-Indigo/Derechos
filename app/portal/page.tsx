@@ -41,6 +41,10 @@ export default async function PortalHomePage() {
             ) : (
               <p className="text-sm text-slate-500">Aun no tienes una credencial emitida. Solicítala a tu coordinacion.</p>
             )}
+            {member.photoUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={member.photoUrl} alt="Mi fotografia" className="size-24 rounded-lg border border-slate-200 object-cover" />
+            ) : null}
             <div className="space-y-1 text-sm">
               <p className="font-semibold text-slate-900">{member.fullName}</p>
               <p className="text-slate-600">{member.memberNumber}</p>

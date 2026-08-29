@@ -1,5 +1,6 @@
 import { Card, CardHeader } from "@/components/ui/card";
 import { MemberProfileForm } from "@/components/portal/portal-forms";
+import { MemberPhotoUploader } from "@/components/portal/photo-uploader";
 import { getMemberSelf } from "@/server/queries/app";
 
 export const dynamic = "force-dynamic";
@@ -14,9 +15,15 @@ export default async function PortalProfilePage() {
     );
   }
   return (
-    <Card>
-      <CardHeader title="Mis datos de contacto" description="Manten actualizada tu informacion. Los cambios quedan registrados." />
-      <MemberProfileForm profile={{ phone: member.phone, email: member.email, address: member.address }} />
-    </Card>
+    <div className="space-y-6">
+      <Card>
+        <CardHeader title="Mi fotografia" description="Tu foto aparece en tu pagina de verificacion publica para comprobar tu identidad." />
+        <MemberPhotoUploader currentPhoto={member.photoUrl} />
+      </Card>
+      <Card>
+        <CardHeader title="Mis datos de contacto" description="Manten actualizada tu informacion. Los cambios quedan registrados." />
+        <MemberProfileForm profile={{ phone: member.phone, email: member.email, address: member.address }} />
+      </Card>
+    </div>
   );
 }

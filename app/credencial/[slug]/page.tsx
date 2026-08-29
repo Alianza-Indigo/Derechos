@@ -27,6 +27,10 @@ export default async function CredentialPage({ params }: { params: Promise<{ slu
         <div className="rounded-lg border border-slate-200 bg-white p-5 text-center">
           <div className="mx-auto mb-4 flex size-14 items-center justify-center rounded-lg bg-teal-700 font-bold text-white">DH</div>
           <p className="text-sm text-slate-500">{APP_NAME}</p>
+          {member.photoUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={member.photoUrl} alt={`Fotografia de ${member.fullName}`} className="mx-auto mt-4 size-28 rounded-full border border-slate-200 object-cover" />
+          ) : null}
           <h1 className="mt-2 text-xl font-semibold text-slate-950">{member.fullName}</h1>
           <p className="mt-1 text-slate-600">{member.memberNumber}</p>
           <div className="mt-4"><Badge tone={member.credentialStatus === "activa" ? "green" : "amber"}>{member.credentialStatus}</Badge></div>

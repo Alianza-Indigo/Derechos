@@ -12,17 +12,19 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "No autorizado." }, { status: 401 });
   }
   const user = await getCurrentUser();
-  if (!hasAnyPermission(user, ["write:case", "write:event", "write:territory", "write:field", "*"])) {
+  const formData = await request.formData();
+  const file = formData.get("file");
+  const entityType = String(formData.get("entityType") ?? "evidence");
+  // Los miembros pueden subir su propia fotografia (dato publico de la
+  // credencial); el resto de cargas requiere permiso de escritura.
+  const isOwnPhoto = entityType === "member-photo";
+  if (!isOwnPhoto && !hasAnyPermission(user, ["write:case", "write:event", "write:territory", "write:field", "*"])) {
     return NextResponse.json({ error: "Sin permiso para cargar archivos." }, { status: 403 });
   }
   const limit = await rateLimit(clientKey(request, "upload"), 20, 60);
   if (!limit.allowed) {
     return NextResponse.json({ error: "Demasiadas cargas. Intenta nuevamente en un momento." }, { status: 429 });
   }
-
-  const formData = await request.formData();
-  const file = formData.get("file");
-  const entityType = String(formData.get("entityType") ?? "evidence");
 
   if (!(file instanceof File)) {
     return NextResponse.json({ error: "Archivo requerido." }, { status: 400 });

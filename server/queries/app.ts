@@ -632,6 +632,7 @@ function dbMemberToDomain(member: typeof schema.members.$inferSelect, credential
     phone: member.phone,
     email: member.email,
     address: member.address,
+    photoUrl: member.photoUrl ?? undefined,
     territoryId: member.territoryId,
     status: member.status,
     joinedAt: member.joinedAt.toISOString(),

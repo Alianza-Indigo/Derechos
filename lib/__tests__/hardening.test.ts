@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { intensityStyle } from "@/lib/intensity";
-import { aiFeedbackSchema, caseReassignSchema, credentialActionSchema, locationPurgeSchema, memberAccessSchema, memberProfileSchema, memberReportSchema, roleAssignmentSchema, userFormSchema } from "@/lib/validators";
+import { aiFeedbackSchema, caseReassignSchema, credentialActionSchema, locationPurgeSchema, memberAccessSchema, memberPhotoSchema, memberProfileSchema, memberReportSchema, roleAssignmentSchema, userFormSchema } from "@/lib/validators";
 
 describe("endurecimiento del review", () => {
   it("escala la intensidad del mapa por valor y maximo", () => {
@@ -65,5 +65,11 @@ describe("endurecimiento del review", () => {
     expect(memberAccessSchema.safeParse({ memberId: "m1", password: "12345678" }).success).toBe(true);
     expect(memberAccessSchema.safeParse({ memberId: "m1", password: "corta" }).success).toBe(false);
     expect(caseReassignSchema.safeParse({ caseId: "c1", assignedTo: "u1" }).success).toBe(true);
+  });
+
+  it("valida la foto del miembro (propia o por staff)", () => {
+    expect(memberPhotoSchema.safeParse({ photoUrl: "https://blob/x.png" }).success).toBe(true);
+    expect(memberPhotoSchema.safeParse({ memberId: "m1", photoUrl: "https://blob/x.png" }).success).toBe(true);
+    expect(memberPhotoSchema.safeParse({ photoUrl: "" }).success).toBe(false);
   });
 });

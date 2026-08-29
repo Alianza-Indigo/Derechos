@@ -224,6 +224,11 @@ export const memberProfileSchema = z.object({
   address: z.string().min(5, "Captura tu domicilio o referencia."),
 });
 
+export const memberPhotoSchema = z.object({
+  memberId: z.string().optional(),
+  photoUrl: z.string().min(3, "Sube una fotografia valida."),
+});
+
 export const memberAccessSchema = z.object({
   memberId: z.string().min(1),
   password: z.string().min(8, "La contrasena debe tener al menos 8 caracteres."),
