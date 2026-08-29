@@ -342,6 +342,7 @@ export const aiProviderConfigs = pgTable("ai_provider_configs", {
   enabled: boolean("enabled").default(false).notNull(),
   defaultModel: text("default_model").notNull(),
   encryptedApiKeyRef: text("encrypted_api_key_ref").notNull(),
+  apiKey: text("api_key"),
   priority: integer("priority").default(10).notNull(),
   updatedBy: uuid("updated_by").references(() => users.id).notNull(),
   updatedAt,

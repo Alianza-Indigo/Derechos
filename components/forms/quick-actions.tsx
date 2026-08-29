@@ -96,6 +96,7 @@ export function ProviderConfigForm({ provider }: { provider: AiProviderConfig })
       </select>
       <input name="defaultModel" defaultValue={provider.defaultModel} className="h-9 w-44 rounded-md border border-slate-300 px-2 text-xs" />
       <input name="priority" type="number" defaultValue={provider.priority} className="h-9 w-16 rounded-md border border-slate-300 px-2 text-xs" />
+      <input name="apiKey" type="password" placeholder="API key (opcional)" autoComplete="off" className="h-9 w-40 rounded-md border border-slate-300 px-2 text-xs" />
       <Button className="h-9 px-3 text-xs" disabled={pending}>{pending ? "..." : "Guardar"}</Button>
       {state?.message ? <span className="text-xs text-emerald-700">{state.message}</span> : null}
     </form>

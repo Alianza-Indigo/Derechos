@@ -19,6 +19,15 @@ export function hasPermission(user: User, permission: string) {
   return user.roles.some((role) => rolePermissions[role]?.includes("*") || rolePermissions[role]?.includes(permission));
 }
 
+export function hasAnyPermission(user: User, permissions: string[]) {
+  return permissions.some((permission) => hasPermission(user, permission));
+}
+
+// Puede ver datos personales sensibles (telefono, correo, domicilio, contacto).
+export function canViewSensitive(user: User) {
+  return hasAnyPermission(user, ["*", "read:national", "read:territory", "write:territory", "write:case", "read:audit", "audit"]);
+}
+
 export function canAccessTerritory(user: User, territoryId?: string) {
   if (hasPermission(user, "*") || user.roles.includes("super_admin") || user.roles.includes("national_direction")) {
     return true;

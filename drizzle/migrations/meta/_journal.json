@@ -15,6 +15,13 @@
       "when": 1787976394115,
       "tag": "0001_even_captain_universe",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1787987080797,
+      "tag": "0002_parallel_sage",
+      "breakpoints": true
     }
   ]
 }

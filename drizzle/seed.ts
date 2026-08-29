@@ -23,10 +23,10 @@ import * as schema from "@/drizzle/schema";
 import { getDb } from "@/server/db";
 
 async function main() {
-  const adminHash = await hash("demo-seguro", 12);
+  const demoHash = await hash(process.env.DEMO_PASSWORD || "demo-seguro", 12);
   const summary = {
     superAdmin: users.find((user) => user.roles.includes("super_admin"))?.email,
-    adminPasswordHashPreview: `${adminHash.slice(0, 12)}...`,
+    passwordHashPreview: `${demoHash.slice(0, 12)}...`,
     territories: territories.length,
     members: members.length,
     cases: cases.length,
@@ -83,7 +83,7 @@ async function main() {
     name: user.name,
     email: user.email,
     phone: user.phone,
-    passwordHash: user.roles.includes("super_admin") ? adminHash : null,
+    passwordHash: demoHash,
     providerId: null,
     status: user.status,
   }))).onConflictDoNothing();

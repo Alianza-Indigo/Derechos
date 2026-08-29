@@ -1,0 +1,1 @@
+ALTER TABLE "ai_provider_configs" ADD COLUMN "api_key" text;

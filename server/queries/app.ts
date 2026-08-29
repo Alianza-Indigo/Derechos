@@ -1,66 +1,71 @@
-import {
-  aiConversations,
-  aiPromptTemplates,
-  aiProviderConfigs,
-  allLocationPings,
-  auditLogs,
-  cases,
-  events,
-  fieldCommissions,
-  locationSettings,
-  members,
-  organization,
-  prevalenceMetrics,
-  prevalenceRecords,
-  prevalenceStudies,
-  reports,
-  territories,
-  users,
-} from "@/lib/mock-data";
+import { organization, reports, territories, users, members, cases } from "@/lib/mock-data";
 import type { HumanRightsCase, Member, User } from "@/lib/types";
 import { eq, desc } from "drizzle-orm";
 import { getServerSession } from "next-auth";
+import { redirect } from "next/navigation";
 import * as schema from "@/drizzle/schema";
 import { getDb } from "@/server/db";
 import { authOptions } from "@/server/auth/options";
-import { canAccessCase, canAccessTerritory } from "@/server/permissions/rbac";
+import { canAccessCase, canAccessTerritory, canViewSensitive, hasAnyPermission } from "@/server/permissions/rbac";
 import { stableUuid } from "@/lib/stable-id";
+
+// La aplicacion lee siempre de Postgres (getDb exige DATABASE_URL). El modulo
+// de datos semilla solo se usa para resolver nombres de referencia estaticos
+// (territorios/usuarios) y numeradores.
 
 export async function getCurrentUser(): Promise<User> {
   const session = await getServerSession(authOptions);
   const sessionEmail = session?.user?.email?.toLowerCase();
-  const db = getDb();
-  if (db) {
-    const [user] = await db.select().from(schema.users).where(eq(schema.users.email, sessionEmail || "admin@demo.org")).limit(1);
-    if (user) {
-      const roleRows = await db
-        .select({ role: schema.roles.key, scopeId: schema.userRoles.scopeId })
-        .from(schema.userRoles)
-        .innerJoin(schema.roles, eq(schema.roles.id, schema.userRoles.roleId))
-        .where(eq(schema.userRoles.userId, user.id));
-      return dbUserToDomain(user, roleRows.map((row) => row.role as User["roles"][number]), roleRows[0]?.scopeId ?? undefined);
-    }
+  if (!sessionEmail) {
+    redirect("/login");
   }
-  return users.find((user) => user.email.toLowerCase() === sessionEmail) ?? users[0];
+  const db = getDb();
+  const [user] = await db.select().from(schema.users).where(eq(schema.users.email, sessionEmail)).limit(1);
+  if (!user) {
+    redirect("/login");
+  }
+  const roleRows = await db
+    .select({ role: schema.roles.key, scopeId: schema.userRoles.scopeId })
+    .from(schema.userRoles)
+    .innerJoin(schema.roles, eq(schema.roles.id, schema.userRoles.roleId))
+    .where(eq(schema.userRoles.userId, user.id));
+  return dbUserToDomain(user, roleRows.map((row) => row.role as User["roles"][number]), roleRows[0]?.scopeId ?? undefined);
 }
 
-export async function getDashboardData(user?: User) {
-  const currentUser = user ?? await getCurrentUser();
-  const [caseRows, memberRows, eventRows, auditRows, operations] = await Promise.all([
+function redactMember(member: Member, allowSensitive: boolean): Member {
+  if (allowSensitive) {
+    return member;
+  }
+  return { ...member, phone: "Reservado", email: "Reservado", address: "Reservado" };
+}
+
+function redactCase(record: HumanRightsCase, allowSensitive: boolean): HumanRightsCase {
+  if (allowSensitive) {
+    return record;
+  }
+  return { ...record, persons: record.persons.map((person) => ({ ...person, contact: "Reservado" })) };
+}
+
+export async function getDashboardData() {
+  // Las consultas de lista ya aplican el alcance del usuario autenticado.
+  const [accessibleCases, accessibleMembers, accessibleEvents, auditRows, operations] = await Promise.all([
     listCases(),
     listMembers(),
     listEvents(),
     getAuditLogs(),
     getOperationsData(),
   ]);
-  const accessibleCases = caseRows.filter((record) => canAccessCase(currentUser, record));
-  const accessibleMembers = memberRows.filter((member) => canAccessTerritory(currentUser, member.territoryId));
-  const accessibleEvents = eventRows.filter((event) => canAccessTerritory(currentUser, event.territoryId));
   const urgentCases = accessibleCases.filter((record) => record.priority === "Urgente" && !["Resuelto", "Archivado"].includes(record.status));
   const activeLocations = operations.pings.filter((ping) => ping.status !== "deshabilitado");
+  const overdueCheckins = operations.fieldCommissions.filter((commission) => commission.status === "activa" && commission.checkIns.length === 0).length;
+  const prevalence = await getPrevalenceData();
+  const prevalenceMetric = prevalence.records.filter((record) => record.metricId && prevalence.metrics.find((metric) => metric.id === record.metricId && metric.valueType === "porcentaje"));
+  const prevalenceAvg = prevalenceMetric.length
+    ? prevalenceMetric.reduce((sum, record) => sum + Number(record.valueNumeric ?? 0), 0) / prevalenceMetric.length
+    : 0;
 
   return {
-    organization,
+    organization: (await getConfiguration()).organization,
     kpis: [
       { label: "Miembros activos", value: accessibleMembers.filter((member) => member.status === "activo").length, tone: "teal" },
       { label: "Nuevos del mes", value: accessibleMembers.filter((member) => member.joinedAt.startsWith("2026-08")).length, tone: "blue" },
@@ -70,11 +75,11 @@ export async function getDashboardData(user?: User) {
       { label: "Eventos realizados", value: accessibleEvents.length, tone: "violet" },
       { label: "Personas alcanzadas", value: accessibleEvents.reduce((sum, event) => sum + event.attendeesCount, 0), tone: "cyan" },
       { label: "Presencia territorial", value: new Set([...accessibleMembers.map((member) => member.territoryId), ...accessibleEvents.map((event) => event.territoryId)]).size, tone: "slate" },
-      { label: "Prevalencia estimada", value: "6.8%", tone: "indigo" },
-      { label: "Alertas pendientes", value: urgentCases.length + 3, tone: "orange" },
+      { label: "Prevalencia estimada", value: `${prevalenceAvg.toFixed(1)}%`, tone: "indigo" },
+      { label: "Alertas pendientes", value: urgentCases.length, tone: "orange" },
       { label: "En campo", value: activeLocations.filter((ping) => ping.status === "en_comision").length, tone: "emerald" },
-      { label: "Check-ins vencidos", value: 2, tone: "rose" },
-      { label: "Uso IA", value: aiConversations.length, tone: "purple" },
+      { label: "Check-ins pendientes", value: overdueCheckins, tone: "rose" },
+      { label: "Uso IA", value: (await getAssistantData()).conversations.length, tone: "purple" },
     ],
     casesByStatus: aggregate(accessibleCases, "status"),
     casesByCategory: aggregate(accessibleCases, "category"),
@@ -88,180 +93,144 @@ export async function getDashboardData(user?: User) {
 
 export async function listMembers(query?: string) {
   const db = getDb();
-  if (db) {
-    const rows = await db
-      .select({ member: schema.members, credential: schema.memberCredentials })
-      .from(schema.members)
-      .leftJoin(schema.memberCredentials, eq(schema.memberCredentials.memberId, schema.members.id))
-      .orderBy(desc(schema.members.joinedAt));
-    return filterText(rows.map(({ member, credential }) => dbMemberToDomain(member, credential)), query, (member) => [member.fullName, member.memberNumber, member.email, member.status]);
-  }
-  return filterText(members, query, (member) => [member.fullName, member.memberNumber, member.email, member.status]);
+  const user = await getCurrentUser();
+  const sensitive = canViewSensitive(user);
+  const rows = await db
+    .select({ member: schema.members, credential: schema.memberCredentials })
+    .from(schema.members)
+    .leftJoin(schema.memberCredentials, eq(schema.memberCredentials.memberId, schema.members.id))
+    .orderBy(desc(schema.members.joinedAt));
+  const domain = rows
+    .map(({ member, credential }) => dbMemberToDomain(member, credential))
+    .filter((member) => canAccessTerritory(user, member.territoryId))
+    .map((member) => redactMember(member, sensitive));
+  return filterText(domain, query, (member) => [member.fullName, member.memberNumber, member.email, member.status]);
 }
 
 export async function getMemberById(id: string) {
   const db = getDb();
-  if (db) {
-    const [row] = await db
-      .select({ member: schema.members, credential: schema.memberCredentials })
-      .from(schema.members)
-      .leftJoin(schema.memberCredentials, eq(schema.memberCredentials.memberId, schema.members.id))
-      .where(eq(schema.members.id, id))
-      .limit(1);
-    return row ? dbMemberToDomain(row.member, row.credential) : undefined;
+  const user = await getCurrentUser();
+  const [row] = await db
+    .select({ member: schema.members, credential: schema.memberCredentials })
+    .from(schema.members)
+    .leftJoin(schema.memberCredentials, eq(schema.memberCredentials.memberId, schema.members.id))
+    .where(eq(schema.members.id, id))
+    .limit(1);
+  if (!row) {
+    return undefined;
   }
-  return members.find((member) => member.id === id);
+  const member = dbMemberToDomain(row.member, row.credential);
+  if (!canAccessTerritory(user, member.territoryId)) {
+    return undefined;
+  }
+  return redactMember(member, canViewSensitive(user));
 }
 
+// Publico (pagina de credencial): solo datos minimos, sin sesion.
 export async function getMemberByCredentialSlug(slug: string) {
   const db = getDb();
-  if (db) {
-    const [row] = await db
-      .select({ member: schema.members, credential: schema.memberCredentials })
-      .from(schema.memberCredentials)
-      .innerJoin(schema.members, eq(schema.members.id, schema.memberCredentials.memberId))
-      .where(eq(schema.memberCredentials.publicSlug, slug))
-      .limit(1);
-    return row ? dbMemberToDomain(row.member, row.credential) : undefined;
-  }
-  return members.find((member) => member.credentialSlug === slug);
+  const [row] = await db
+    .select({ member: schema.members, credential: schema.memberCredentials })
+    .from(schema.memberCredentials)
+    .innerJoin(schema.members, eq(schema.members.id, schema.memberCredentials.memberId))
+    .where(eq(schema.memberCredentials.publicSlug, slug))
+    .limit(1);
+  return row ? dbMemberToDomain(row.member, row.credential) : undefined;
 }
 
 export async function listCases(query?: string) {
   const db = getDb();
-  if (db) {
-    const rows = await db.select().from(schema.cases).orderBy(desc(schema.cases.openedAt));
-    return filterText(rows.map((record) => dbCaseToDomain(record)), query, (record) => [record.caseNumber, record.title, record.category, record.status, record.priority]);
-  }
-  return filterText(cases, query, (record) => [record.caseNumber, record.title, record.category, record.status, record.priority]);
+  const user = await getCurrentUser();
+  const sensitive = canViewSensitive(user);
+  const rows = await db.select().from(schema.cases).orderBy(desc(schema.cases.openedAt));
+  const domain = rows
+    .map((record) => dbCaseToDomain(record))
+    .filter((record) => canAccessCase(user, record))
+    .map((record) => redactCase(record, sensitive));
+  return filterText(domain, query, (record) => [record.caseNumber, record.title, record.category, record.status, record.priority]);
 }
 
 export async function getCaseById(id: string) {
   const db = getDb();
-  if (db) {
-    const [record] = await db.select().from(schema.cases).where(eq(schema.cases.id, id)).limit(1);
-    if (!record) {
-      return undefined;
-    }
-    const [people, actions, evidence, notes] = await Promise.all([
-      db.select().from(schema.casePeople).where(eq(schema.casePeople.caseId, id)),
-      db.select().from(schema.caseActions).where(eq(schema.caseActions.caseId, id)),
-      db.select().from(schema.caseEvidence).where(eq(schema.caseEvidence.caseId, id)),
-      db.select().from(schema.caseNotes).where(eq(schema.caseNotes.caseId, id)),
-    ]);
-    return dbCaseToDomain(record, people, actions, evidence, notes.map((note) => note.note));
+  const user = await getCurrentUser();
+  const [record] = await db.select().from(schema.cases).where(eq(schema.cases.id, id)).limit(1);
+  if (!record) {
+    return undefined;
   }
-  return cases.find((record) => record.id === id);
+  const [people, actions, evidence, notes] = await Promise.all([
+    db.select().from(schema.casePeople).where(eq(schema.casePeople.caseId, id)),
+    db.select().from(schema.caseActions).where(eq(schema.caseActions.caseId, id)),
+    db.select().from(schema.caseEvidence).where(eq(schema.caseEvidence.caseId, id)),
+    db.select().from(schema.caseNotes).where(eq(schema.caseNotes.caseId, id)),
+  ]);
+  const domain = dbCaseToDomain(record, people, actions, evidence, notes.map((note) => note.note));
+  if (!canAccessCase(user, domain)) {
+    return undefined;
+  }
+  return redactCase(domain, canViewSensitive(user));
 }
 
 export async function listEvents(query?: string) {
   const db = getDb();
-  if (db) {
-    const rows = await db.select().from(schema.events).orderBy(desc(schema.events.dateStart));
-    return filterText(rows.map((event) => dbEventToDomain(event)), query, (event) => [event.title, event.eventType, event.location, event.impactSummary]);
-  }
-  return filterText(events, query, (event) => [event.title, event.eventType, event.location, event.impactSummary]);
+  const user = await getCurrentUser();
+  const rows = await db.select().from(schema.events).orderBy(desc(schema.events.dateStart));
+  const domain = rows.map((event) => dbEventToDomain(event)).filter((event) => canAccessTerritory(user, event.territoryId));
+  return filterText(domain, query, (event) => [event.title, event.eventType, event.location, event.impactSummary]);
 }
 
 export async function getEventById(id: string) {
   const db = getDb();
-  if (db) {
-    const [event] = await db.select().from(schema.events).where(eq(schema.events.id, id)).limit(1);
-    if (!event) {
-      return undefined;
-    }
-    const evidence = await db.select().from(schema.eventEvidence).where(eq(schema.eventEvidence.eventId, id));
-    return dbEventToDomain(event, evidence);
+  const user = await getCurrentUser();
+  const [event] = await db.select().from(schema.events).where(eq(schema.events.id, id)).limit(1);
+  if (!event) {
+    return undefined;
   }
-  return events.find((event) => event.id === id);
+  const evidence = await db.select().from(schema.eventEvidence).where(eq(schema.eventEvidence.eventId, id));
+  const domain = dbEventToDomain(event, evidence);
+  if (!canAccessTerritory(user, domain.territoryId)) {
+    return undefined;
+  }
+  return domain;
 }
 
 export async function getTerritories() {
   const db = getDb();
-  if (db) {
-    const rows = await db.select().from(schema.territories);
-    return rows.map((territory) => ({
-      id: territory.id,
-      type: territory.type,
-      name: territory.name,
-      countryCode: territory.countryCode,
-      stateCode: territory.stateCode ?? undefined,
-      cityName: territory.cityName ?? undefined,
-      parentId: territory.parentId ?? undefined,
-      latitude: Number(territory.latitude),
-      longitude: Number(territory.longitude),
-    }));
-  }
-  return territories;
+  const rows = await db.select().from(schema.territories);
+  return rows.map((territory) => ({
+    id: territory.id,
+    type: territory.type,
+    name: territory.name,
+    countryCode: territory.countryCode,
+    stateCode: territory.stateCode ?? undefined,
+    cityName: territory.cityName ?? undefined,
+    parentId: territory.parentId ?? undefined,
+    latitude: Number(territory.latitude),
+    longitude: Number(territory.longitude),
+  }));
 }
 
 export async function getUsers() {
   const db = getDb();
-  if (db) {
-    const rows = await db.select().from(schema.users);
-    return rows.map((user) => dbUserToDomain(user, [], undefined));
-  }
-  return users;
+  const rows = await db.select().from(schema.users);
+  return rows.map((user) => dbUserToDomain(user, [], undefined));
 }
 
 export async function getOperationsData() {
   const db = getDb();
-  if (db) {
-    const [commissionRows, settingRows, pingRows, userRows] = await Promise.all([
-      db.select().from(schema.fieldCommissions).orderBy(desc(schema.fieldCommissions.scheduledAt)),
-      db.select().from(schema.locationTrackingSettings),
-      db.select().from(schema.delegateLocationPings).orderBy(desc(schema.delegateLocationPings.capturedAt)),
-      db.select().from(schema.users),
-    ]);
-    const pings = pingRows.map(dbPingToDomain);
-    return {
-      fieldCommissions: commissionRows.map((commission) => ({
-        id: commission.id,
-        title: commission.title,
-        commissionType: commission.commissionType,
-        description: commission.description,
-        assignedTo: commission.assignedTo,
-        territoryId: commission.territoryId,
-        relatedCaseId: commission.relatedCaseId ?? undefined,
-        relatedEventId: commission.relatedEventId ?? undefined,
-        status: commission.status,
-        scheduledAt: commission.scheduledAt.toISOString(),
-        completedAt: commission.completedAt?.toISOString(),
-        checkIns: pings.filter((ping) => ping.fieldCommissionId === commission.id),
-      })),
-      locationSettings: settingRows.map((setting) => ({
-        id: setting.id,
-        userId: setting.userId,
-        enabled: setting.enabled,
-        mode: setting.mode,
-        allowedDays: setting.allowedDays,
-        allowedHours: setting.allowedHours,
-        retentionDays: setting.retentionDays,
-        disabledReason: setting.disabledReason ?? undefined,
-        updatedBy: setting.updatedBy,
-        updatedAt: setting.updatedAt.toISOString(),
-      })),
-      pings,
-      people: userRows.map((user) => dbUserToDomain(user, [], undefined)),
-    };
-  }
-  return {
-    fieldCommissions,
-    locationSettings,
-    pings: allLocationPings,
-    people: users.filter((user) => user.roles.includes("territorial_delegate") || user.roles.includes("field_commissioner")),
-  };
-}
-
-export async function getCommissionById(id: string) {
-  const db = getDb();
-  if (db) {
-    const [commission] = await db.select().from(schema.fieldCommissions).where(eq(schema.fieldCommissions.id, id)).limit(1);
-    if (!commission) {
-      return undefined;
-    }
-    const pings = await db.select().from(schema.delegateLocationPings).where(eq(schema.delegateLocationPings.fieldCommissionId, id));
-    return {
+  const user = await getCurrentUser();
+  const canReadLocation = hasAnyPermission(user, ["location:read", "*"]);
+  const [commissionRows, settingRows, pingRows, userRows] = await Promise.all([
+    db.select().from(schema.fieldCommissions).orderBy(desc(schema.fieldCommissions.scheduledAt)),
+    db.select().from(schema.locationTrackingSettings),
+    db.select().from(schema.delegateLocationPings).orderBy(desc(schema.delegateLocationPings.capturedAt)),
+    db.select().from(schema.users),
+  ]);
+  const pings = pingRows
+    .map(dbPingToDomain)
+    .filter((ping) => canReadLocation || canAccessTerritory(user, ping.territoryId) || ping.userId === user.id);
+  const fieldCommissions = commissionRows
+    .filter((commission) => canAccessTerritory(user, commission.territoryId) || commission.assignedTo === user.id)
+    .map((commission) => ({
       id: commission.id,
       title: commission.title,
       commissionType: commission.commissionType,
@@ -273,136 +242,148 @@ export async function getCommissionById(id: string) {
       status: commission.status,
       scheduledAt: commission.scheduledAt.toISOString(),
       completedAt: commission.completedAt?.toISOString(),
-      checkIns: pings.map(dbPingToDomain),
-    };
+      checkIns: pings.filter((ping) => ping.fieldCommissionId === commission.id),
+    }));
+  const locationSettings = settingRows
+    .filter((setting) => canReadLocation || setting.userId === user.id)
+    .map((setting) => ({
+      id: setting.id,
+      userId: setting.userId,
+      enabled: setting.enabled,
+      mode: setting.mode,
+      allowedDays: setting.allowedDays,
+      allowedHours: setting.allowedHours,
+      retentionDays: setting.retentionDays,
+      disabledReason: setting.disabledReason ?? undefined,
+      updatedBy: setting.updatedBy,
+      updatedAt: setting.updatedAt.toISOString(),
+    }));
+  return {
+    fieldCommissions,
+    locationSettings,
+    pings,
+    people: userRows.map((item) => dbUserToDomain(item, [], undefined)),
+  };
+}
+
+export async function getCommissionById(id: string) {
+  const db = getDb();
+  const user = await getCurrentUser();
+  const [commission] = await db.select().from(schema.fieldCommissions).where(eq(schema.fieldCommissions.id, id)).limit(1);
+  if (!commission) {
+    return undefined;
   }
-  return fieldCommissions.find((commission) => commission.id === id);
+  if (!(canAccessTerritory(user, commission.territoryId) || commission.assignedTo === user.id)) {
+    return undefined;
+  }
+  const pings = await db.select().from(schema.delegateLocationPings).where(eq(schema.delegateLocationPings.fieldCommissionId, id));
+  return {
+    id: commission.id,
+    title: commission.title,
+    commissionType: commission.commissionType,
+    description: commission.description,
+    assignedTo: commission.assignedTo,
+    territoryId: commission.territoryId,
+    relatedCaseId: commission.relatedCaseId ?? undefined,
+    relatedEventId: commission.relatedEventId ?? undefined,
+    status: commission.status,
+    scheduledAt: commission.scheduledAt.toISOString(),
+    completedAt: commission.completedAt?.toISOString(),
+    checkIns: pings.map(dbPingToDomain),
+  };
 }
 
 export async function getAssistantData() {
   const db = getDb();
-  if (db) {
-    const [providerRows, promptRows, conversationRows, messageRows] = await Promise.all([
-      db.select().from(schema.aiProviderConfigs),
-      db.select().from(schema.aiPromptTemplates).orderBy(desc(schema.aiPromptTemplates.updatedAt)),
-      db.select().from(schema.aiConversations).orderBy(desc(schema.aiConversations.createdAt)),
-      db.select().from(schema.aiMessages).orderBy(desc(schema.aiMessages.createdAt)),
-    ]);
-    return {
-      providerConfigs: providerRows.map((provider) => ({
-        id: provider.id,
-        providerKey: provider.providerKey,
-        displayName: provider.displayName,
-        enabled: provider.enabled,
-        defaultModel: provider.defaultModel,
-        encryptedApiKeyRef: provider.encryptedApiKeyRef,
-        priority: provider.priority,
-        updatedBy: provider.updatedBy,
-        updatedAt: provider.updatedAt.toISOString(),
-      })),
-      prompts: promptRows.map(dbPromptToDomain),
-      conversations: conversationRows.map((conversation) => ({
-        id: conversation.id,
-        userId: conversation.userId,
-        relatedCaseId: conversation.relatedCaseId ?? undefined,
-        relatedEventId: conversation.relatedEventId ?? undefined,
-        fieldCommissionId: conversation.fieldCommissionId ?? undefined,
-        promptTemplateId: conversation.promptTemplateId,
-        title: conversation.title,
-        status: conversation.status as "activa" | "archivada",
-        createdAt: conversation.createdAt.toISOString(),
-        messages: messageRows.filter((message) => message.conversationId === conversation.id).map((message) => ({
-          id: message.id,
-          conversationId: message.conversationId,
-          role: message.role,
-          content: message.content,
-          metadata: message.metadata,
-          createdAt: message.createdAt.toISOString(),
-        })),
-      })),
-    };
-  }
+  const [providerRows, promptRows, conversationRows, messageRows] = await Promise.all([
+    db.select().from(schema.aiProviderConfigs),
+    db.select().from(schema.aiPromptTemplates).orderBy(desc(schema.aiPromptTemplates.updatedAt)),
+    db.select().from(schema.aiConversations).orderBy(desc(schema.aiConversations.createdAt)),
+    db.select().from(schema.aiMessages).orderBy(desc(schema.aiMessages.createdAt)),
+  ]);
   return {
-    providerConfigs: aiProviderConfigs,
-    prompts: aiPromptTemplates,
-    conversations: aiConversations,
+    providerConfigs: providerRows.map(dbProviderToDomain),
+    prompts: promptRows.map(dbPromptToDomain),
+    conversations: conversationRows.map((conversation) => ({
+      id: conversation.id,
+      userId: conversation.userId,
+      relatedCaseId: conversation.relatedCaseId ?? undefined,
+      relatedEventId: conversation.relatedEventId ?? undefined,
+      fieldCommissionId: conversation.fieldCommissionId ?? undefined,
+      promptTemplateId: conversation.promptTemplateId,
+      title: conversation.title,
+      status: conversation.status as "activa" | "archivada",
+      createdAt: conversation.createdAt.toISOString(),
+      messages: messageRows.filter((message) => message.conversationId === conversation.id).map((message) => ({
+        id: message.id,
+        conversationId: message.conversationId,
+        role: message.role,
+        content: message.content,
+        metadata: message.metadata,
+        createdAt: message.createdAt.toISOString(),
+      })),
+    })),
   };
 }
 
 export async function getPromptById(id: string) {
   const db = getDb();
-  if (db) {
-    const [prompt] = await db.select().from(schema.aiPromptTemplates).where(eq(schema.aiPromptTemplates.id, id)).limit(1);
-    return prompt ? dbPromptToDomain(prompt) : undefined;
-  }
-  return aiPromptTemplates.find((prompt) => prompt.id === id);
+  const [prompt] = await db.select().from(schema.aiPromptTemplates).where(eq(schema.aiPromptTemplates.id, id)).limit(1);
+  return prompt ? dbPromptToDomain(prompt) : undefined;
 }
 
 export async function getPrevalenceData() {
   const db = getDb();
-  if (db) {
-    const [studyRows, metricRows, recordRows, territoryRows] = await Promise.all([
-      db.select().from(schema.prevalenceStudies),
-      db.select().from(schema.prevalenceMetrics),
-      db.select().from(schema.prevalenceRecords),
-      db.select().from(schema.territories),
-    ]);
-    const domainTerritories = territoryRows.map((territory) => ({
-      id: territory.id,
-      type: territory.type,
-      name: territory.name,
-      countryCode: territory.countryCode,
-      stateCode: territory.stateCode ?? undefined,
-      cityName: territory.cityName ?? undefined,
-      parentId: territory.parentId ?? undefined,
-      latitude: Number(territory.latitude),
-      longitude: Number(territory.longitude),
-    }));
-    const records = recordRows.map((record) => ({
-      id: record.id,
-      studyId: record.studyId,
-      metricId: record.metricId,
-      territoryId: record.territoryId,
-      valueNumeric: record.valueNumeric === null ? undefined : Number(record.valueNumeric),
-      valueText: record.valueText ?? undefined,
-      sampleSize: record.sampleSize ?? undefined,
-      source: record.source,
-      measuredAt: record.measuredAt.toISOString(),
-    }));
-    return {
-      studies: studyRows.map((study) => ({
-        id: study.id,
-        name: study.name,
-        description: study.description,
-        methodology: study.methodology,
-        startDate: study.startDate.toISOString(),
-        endDate: study.endDate.toISOString(),
-        status: study.status as "borrador" | "activo" | "cerrado",
-      })),
-      metrics: metricRows.map((metric) => ({
-        id: metric.id,
-        studyId: metric.studyId,
-        indicatorKey: metric.indicatorKey,
-        label: metric.label,
-        description: metric.description,
-        valueType: metric.valueType as "numerico" | "tasa" | "conteo" | "porcentaje" | "texto",
-      })),
-      records,
-      byTerritory: domainTerritories.map((territory) => ({
-        territory,
-        value: records.filter((record) => record.territoryId === territory.id).reduce((sum, record) => sum + Number(record.valueNumeric ?? 0), 0),
-      })),
-    };
-  }
+  const [studyRows, metricRows, recordRows, territoryRows] = await Promise.all([
+    db.select().from(schema.prevalenceStudies),
+    db.select().from(schema.prevalenceMetrics),
+    db.select().from(schema.prevalenceRecords),
+    db.select().from(schema.territories),
+  ]);
+  const domainTerritories = territoryRows.map((territory) => ({
+    id: territory.id,
+    type: territory.type,
+    name: territory.name,
+    countryCode: territory.countryCode,
+    stateCode: territory.stateCode ?? undefined,
+    cityName: territory.cityName ?? undefined,
+    parentId: territory.parentId ?? undefined,
+    latitude: Number(territory.latitude),
+    longitude: Number(territory.longitude),
+  }));
+  const records = recordRows.map((record) => ({
+    id: record.id,
+    studyId: record.studyId,
+    metricId: record.metricId,
+    territoryId: record.territoryId,
+    valueNumeric: record.valueNumeric === null ? undefined : Number(record.valueNumeric),
+    valueText: record.valueText ?? undefined,
+    sampleSize: record.sampleSize ?? undefined,
+    source: record.source,
+    measuredAt: record.measuredAt.toISOString(),
+  }));
   return {
-    studies: prevalenceStudies,
-    metrics: prevalenceMetrics,
-    records: prevalenceRecords,
-    byTerritory: territories.map((territory) => ({
+    studies: studyRows.map((study) => ({
+      id: study.id,
+      name: study.name,
+      description: study.description,
+      methodology: study.methodology,
+      startDate: study.startDate.toISOString(),
+      endDate: study.endDate.toISOString(),
+      status: study.status as "borrador" | "activo" | "cerrado",
+    })),
+    metrics: metricRows.map((metric) => ({
+      id: metric.id,
+      studyId: metric.studyId,
+      indicatorKey: metric.indicatorKey,
+      label: metric.label,
+      description: metric.description,
+      valueType: metric.valueType as "numerico" | "tasa" | "conteo" | "porcentaje" | "texto",
+    })),
+    records,
+    byTerritory: domainTerritories.map((territory) => ({
       territory,
-      value: prevalenceRecords
-        .filter((record) => record.territoryId === territory.id)
-        .reduce((sum, record) => sum + Number(record.valueNumeric ?? 0), 0),
+      value: records.filter((record) => record.territoryId === territory.id).reduce((sum, record) => sum + Number(record.valueNumeric ?? 0), 0),
     })),
   };
 }
@@ -412,74 +393,58 @@ export async function getReportDefinitions() {
 }
 
 export async function getAuditLogs() {
-  const db = getDb();
-  if (db) {
-    const rows = await db.select().from(schema.auditLogs).orderBy(desc(schema.auditLogs.createdAt));
-    return rows.map((log) => ({
-      id: log.id,
-      actorId: log.actorId ?? "system",
-      action: log.action,
-      entityType: log.entityType,
-      entityId: log.entityId,
-      before: log.before ?? undefined,
-      after: log.after ?? undefined,
-      ip: log.ip ?? undefined,
-      createdAt: log.createdAt.toISOString(),
-    }));
+  const user = await getCurrentUser();
+  if (!hasAnyPermission(user, ["read:audit", "audit", "*"])) {
+    return [];
   }
-  return auditLogs;
+  const db = getDb();
+  const rows = await db.select().from(schema.auditLogs).orderBy(desc(schema.auditLogs.createdAt)).limit(200);
+  return rows.map((log) => ({
+    id: log.id,
+    actorId: log.actorId ?? "system",
+    action: log.action,
+    entityType: log.entityType,
+    entityId: log.entityId,
+    before: log.before ?? undefined,
+    after: log.after ?? undefined,
+    ip: log.ip ?? undefined,
+    createdAt: log.createdAt.toISOString(),
+  }));
 }
 
 export async function getConfiguration() {
   const db = getDb();
-  if (db) {
-    const [orgRows, providerRows, settingRows] = await Promise.all([
-      db.select().from(schema.organizations).limit(1),
-      db.select().from(schema.aiProviderConfigs).orderBy(schema.aiProviderConfigs.priority),
-      db.select().from(schema.locationTrackingSettings),
-    ]);
-    return {
-      organization: orgRows[0]
-        ? {
-          id: orgRows[0].id,
-          name: orgRows[0].name,
-          legalName: orgRows[0].legalName,
-          logoUrl: orgRows[0].logoUrl,
-          primaryColor: orgRows[0].primaryColor,
-          country: orgRows[0].country,
-          geolocationEnabled: orgRows[0].geolocationEnabled,
-          aiEnabled: orgRows[0].aiEnabled,
-        }
-        : organization,
-      aiProviderConfigs: providerRows.map((provider) => ({
-        id: provider.id,
-        providerKey: provider.providerKey,
-        displayName: provider.displayName,
-        enabled: provider.enabled,
-        defaultModel: provider.defaultModel,
-        encryptedApiKeyRef: provider.encryptedApiKeyRef,
-        priority: provider.priority,
-        updatedBy: provider.updatedBy,
-        updatedAt: provider.updatedAt.toISOString(),
-      })),
-      locationSettings: settingRows.map((setting) => ({
-        id: setting.id,
-        userId: setting.userId,
-        enabled: setting.enabled,
-        mode: setting.mode,
-        allowedDays: setting.allowedDays,
-        allowedHours: setting.allowedHours,
-        retentionDays: setting.retentionDays,
-        disabledReason: setting.disabledReason ?? undefined,
-        updatedBy: setting.updatedBy,
-        updatedAt: setting.updatedAt.toISOString(),
-      })),
-    };
-  }
+  const [orgRows, providerRows, settingRows] = await Promise.all([
+    db.select().from(schema.organizations).limit(1),
+    db.select().from(schema.aiProviderConfigs).orderBy(schema.aiProviderConfigs.priority),
+    db.select().from(schema.locationTrackingSettings),
+  ]);
   return {
-    organization,
-    aiProviderConfigs,
-    locationSettings,
+    organization: orgRows[0]
+      ? {
+        id: orgRows[0].id,
+        name: orgRows[0].name,
+        legalName: orgRows[0].legalName,
+        logoUrl: orgRows[0].logoUrl,
+        primaryColor: orgRows[0].primaryColor,
+        country: orgRows[0].country,
+        geolocationEnabled: orgRows[0].geolocationEnabled,
+        aiEnabled: orgRows[0].aiEnabled,
+      }
+      : organization,
+    aiProviderConfigs: providerRows.map(dbProviderToDomain),
+    locationSettings: settingRows.map((setting) => ({
+      id: setting.id,
+      userId: setting.userId,
+      enabled: setting.enabled,
+      mode: setting.mode,
+      allowedDays: setting.allowedDays,
+      allowedHours: setting.allowedHours,
+      retentionDays: setting.retentionDays,
+      disabledReason: setting.disabledReason ?? undefined,
+      updatedBy: setting.updatedBy,
+      updatedAt: setting.updatedAt.toISOString(),
+    })),
   };
 }
 
@@ -624,6 +589,20 @@ function dbPingToDomain(ping: typeof schema.delegateLocationPings.$inferSelect) 
     batteryLevel: ping.batteryLevel ?? undefined,
     status: ping.status,
     capturedAt: ping.capturedAt.toISOString(),
+  };
+}
+
+function dbProviderToDomain(provider: typeof schema.aiProviderConfigs.$inferSelect) {
+  return {
+    id: provider.id,
+    providerKey: provider.providerKey,
+    displayName: provider.displayName,
+    enabled: provider.enabled,
+    defaultModel: provider.defaultModel,
+    encryptedApiKeyRef: provider.encryptedApiKeyRef,
+    priority: provider.priority,
+    updatedBy: provider.updatedBy,
+    updatedAt: provider.updatedAt.toISOString(),
   };
 }
 

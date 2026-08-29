@@ -60,6 +60,7 @@ export const providerConfigSchema = z.object({
   enabled: formBoolean,
   defaultModel: z.string().min(2),
   priority: z.coerce.number().int().min(1).max(99),
+  apiKey: z.string().optional(),
 });
 
 export const eventFormSchema = z.object({
