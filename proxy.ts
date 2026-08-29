@@ -22,7 +22,7 @@ export const config = {
     "/auditoria/:path*",
     "/portal/:path*",
     "/api/export/:path*",
-    "/api/upload/:path*",
+    "/api/upload",
     "/api/ai/:path*",
   ],
 };

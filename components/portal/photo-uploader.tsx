@@ -1,6 +1,7 @@
 "use client";
 
 import { type FormEvent, useActionState, useState } from "react";
+import { upload } from "@vercel/blob/client";
 import { Button } from "@/components/ui/button";
 import { updateMemberPhotoAction } from "@/server/actions/platform";
 
@@ -25,21 +26,23 @@ export function MemberPhotoUploader({ memberId, currentPhoto }: { memberId?: str
       return;
     }
     setUploading(true);
-    const uploadPayload = new FormData();
-    uploadPayload.set("file", file);
-    uploadPayload.set("entityType", "member-photo");
-    const response = await fetch("/api/upload", { method: "POST", body: uploadPayload });
-    setUploading(false);
-    if (!response.ok) {
-      setError("No se pudo subir la imagen.");
-      return;
+    try {
+      // Subida directa navegador -> Blob (sin pasar por la funcion serverless).
+      const blob = await upload(`member-photo/${file.name}`, file, {
+        access: "public",
+        handleUploadUrl: "/api/upload/photo",
+        contentType: file.type || undefined,
+      });
+      setPreview(blob.url);
+      const payload = new FormData();
+      payload.set("photoUrl", blob.url);
+      if (memberId) payload.set("memberId", memberId);
+      formAction(payload);
+    } catch (uploadError) {
+      setError(uploadError instanceof Error ? uploadError.message : "No se pudo subir la imagen.");
+    } finally {
+      setUploading(false);
     }
-    const result = (await response.json()) as { url: string };
-    setPreview(result.url);
-    const payload = new FormData();
-    payload.set("photoUrl", result.url);
-    if (memberId) payload.set("memberId", memberId);
-    formAction(payload);
   }
 
   return (
@@ -54,7 +57,7 @@ export function MemberPhotoUploader({ memberId, currentPhoto }: { memberId?: str
       </div>
       <div className="space-y-2">
         <input name="file" type="file" accept="image/*" className="block text-sm" />
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <Button type="submit" className="h-9 px-3 text-xs" disabled={pending || uploading}>
             {uploading ? "Subiendo..." : pending ? "Guardando..." : "Guardar fotografia"}
           </Button>
