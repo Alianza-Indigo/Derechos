@@ -1,7 +1,6 @@
 "use client";
 
 import { type FormEvent, useActionState, useState } from "react";
-import { upload } from "@vercel/blob/client";
 import { Button } from "@/components/ui/button";
 import { updateMemberPhotoAction } from "@/server/actions/platform";
 
@@ -25,22 +24,38 @@ export function MemberPhotoUploader({ memberId, currentPhoto }: { memberId?: str
       setError("El archivo debe ser una imagen.");
       return;
     }
+
     setUploading(true);
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 30000);
     try {
-      // Subida directa navegador -> Blob (sin pasar por la funcion serverless).
-      const blob = await upload(`member-photo/${file.name}`, file, {
-        access: "public",
-        handleUploadUrl: "/api/upload/photo",
-        contentType: file.type || undefined,
-      });
-      setPreview(blob.url);
+      const uploadPayload = new FormData();
+      uploadPayload.set("file", file);
+      uploadPayload.set("entityType", "member-photo");
+      const response = await fetch("/api/upload", { method: "POST", body: uploadPayload, signal: controller.signal });
+      if (!response.ok) {
+        const detail = await response.text().catch(() => "");
+        setError(`No se pudo subir la imagen (HTTP ${response.status}). ${detail}`.trim());
+        return;
+      }
+      const result = (await response.json()) as { url?: string; message?: string };
+      if (!result.url) {
+        setError(result.message ?? "La respuesta de carga no incluyo una URL.");
+        return;
+      }
+      setPreview(result.url);
       const payload = new FormData();
-      payload.set("photoUrl", blob.url);
+      payload.set("photoUrl", result.url);
       if (memberId) payload.set("memberId", memberId);
       formAction(payload);
     } catch (uploadError) {
-      setError(uploadError instanceof Error ? uploadError.message : "No se pudo subir la imagen.");
+      if (uploadError instanceof DOMException && uploadError.name === "AbortError") {
+        setError("La carga tardo demasiado y se cancelo. Intenta de nuevo.");
+      } else {
+        setError(uploadError instanceof Error ? uploadError.message : "No se pudo subir la imagen.");
+      }
     } finally {
+      clearTimeout(timeout);
       setUploading(false);
     }
   }
