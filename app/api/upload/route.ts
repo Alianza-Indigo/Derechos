@@ -38,12 +38,20 @@ export async function POST(request: NextRequest) {
     });
   }
 
-  const blob = await put(`${entityType}/${crypto.randomUUID()}-${file.name}`, file, {
-    access: "public",
-  });
-
-  return NextResponse.json({
-    url: blob.url,
-    pathname: blob.pathname,
-  });
+  // Nombre seguro: sin espacios ni caracteres especiales que puedan romper la
+  // ruta del blob.
+  const safeName = (file.name || "archivo").replace(/[^a-zA-Z0-9._-]/g, "_").slice(-80);
+  try {
+    const blob = await put(`${entityType}/${safeName}`, file, {
+      access: "public",
+      addRandomSuffix: true,
+    });
+    return NextResponse.json({ url: blob.url, pathname: blob.pathname });
+  } catch (error) {
+    // Devuelve el motivo real de Vercel Blob para poder diagnosticar.
+    return NextResponse.json(
+      { error: `Vercel Blob: ${error instanceof Error ? error.message : "error desconocido"}` },
+      { status: 502 },
+    );
+  }
 }
