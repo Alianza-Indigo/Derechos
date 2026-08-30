@@ -18,8 +18,8 @@ describe("plataforma derechos humanos", () => {
   });
 
   it("aplica alcance territorial basico", () => {
-    expect(canAccessTerritory({ id: "u", name: "Admin", email: "a@b.c", status: "active", roles: ["super_admin"] }, "cdj")).toBe(true);
-    expect(canAccessTerritory({ id: "u", name: "Local", email: "l@b.c", status: "active", roles: ["municipal_coordination"], territoryId: "chc" }, "cdj")).toBe(false);
+    expect(canAccessTerritory({ id: "u", organizationId: "org_demo", name: "Admin", email: "a@b.c", status: "active", roles: ["super_admin"] }, "cdj")).toBe(true);
+    expect(canAccessTerritory({ id: "u", organizationId: "org_demo", name: "Local", email: "l@b.c", status: "active", roles: ["municipal_coordination"], territoryId: "chc" }, "cdj")).toBe(false);
   });
 
   it("mantiene geolocalizacion e IA configurables", () => {
@@ -44,7 +44,7 @@ describe("plataforma derechos humanos", () => {
 
   it("mantiene el alcance territorial estable con ids sembrados en DB", () => {
     const chihuahuaDbId = stableUuid("chh");
-    expect(canAccessTerritory({ id: "u", name: "Local", email: "l@b.c", status: "active", roles: ["municipal_coordination"], territoryId: chihuahuaDbId }, stableUuid("cdj"))).toBe(true);
+    expect(canAccessTerritory({ id: "u", organizationId: "org_demo", name: "Local", email: "l@b.c", status: "active", roles: ["municipal_coordination"], territoryId: chihuahuaDbId }, stableUuid("cdj"))).toBe(true);
   });
 
   it("aplica rate limit en memoria cuando KV no esta configurado", async () => {

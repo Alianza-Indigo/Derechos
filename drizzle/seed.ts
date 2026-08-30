@@ -1,5 +1,5 @@
 import { hash } from "bcryptjs";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { roleLabels } from "@/lib/constants";
 import { stableUuid } from "@/lib/stable-id";
 import {
@@ -48,14 +48,19 @@ async function main() {
   }
 
   const roleIds = Object.fromEntries(Object.keys(roleLabels).map((key) => [key, stableUuid(`role:${key}`)]));
+  // Tenant (organizacion) al que pertenecen todos los datos sembrados.
+  const orgId = stableUuid(organization.id);
 
   await db.insert(schema.organizations).values({
-    id: stableUuid(organization.id),
+    id: orgId,
     name: organization.name,
     legalName: organization.legalName,
     logoUrl: organization.logoUrl,
     primaryColor: organization.primaryColor,
     country: organization.country,
+    slug: "demo",
+    code: "DEMO",
+    status: "active",
     geolocationEnabled: organization.geolocationEnabled,
     aiEnabled: organization.aiEnabled,
   }).onConflictDoNothing();
@@ -69,6 +74,7 @@ async function main() {
 
   await db.insert(schema.territories).values(territories.map((territory) => ({
     id: stableUuid(territory.id),
+    organizationId: orgId,
     type: territory.type,
     name: territory.name,
     countryCode: territory.countryCode,
@@ -81,6 +87,7 @@ async function main() {
 
   await db.insert(schema.users).values(users.map((user) => ({
     id: stableUuid(user.id),
+    organizationId: orgId,
     name: user.name,
     email: user.email,
     phone: user.phone,
@@ -90,6 +97,7 @@ async function main() {
   }))).onConflictDoNothing();
 
   await db.insert(schema.userRoles).values(users.flatMap((user) => user.roles.map((role) => ({
+    organizationId: orgId,
     userId: stableUuid(user.id),
     roleId: roleIds[role],
     scopeType: user.territoryId ? "territory" : "global",
@@ -106,6 +114,7 @@ async function main() {
     const superHash = await hash(superPassword, 12);
     await db.insert(schema.users).values({
       id: stableUuid(`superadmin:${superEmail}`),
+      organizationId: orgId,
       name: process.env.SUPERADMIN_NAME || "Super Administrador",
       email: superEmail,
       phone: null,
@@ -113,12 +122,18 @@ async function main() {
       providerId: null,
       status: "active",
     }).onConflictDoUpdate({
-      target: schema.users.email,
+      // Email es unico por organizacion (indice compuesto organization_id,email).
+      target: [schema.users.organizationId, schema.users.email],
       set: { passwordHash: superHash, status: "active" },
     });
-    const [superUser] = await db.select({ id: schema.users.id }).from(schema.users).where(eq(schema.users.email, superEmail)).limit(1);
+    const [superUser] = await db
+      .select({ id: schema.users.id })
+      .from(schema.users)
+      .where(and(eq(schema.users.organizationId, orgId), eq(schema.users.email, superEmail)))
+      .limit(1);
     if (superUser) {
       await db.insert(schema.userRoles).values({
+        organizationId: orgId,
         userId: superUser.id,
         roleId: roleIds.super_admin,
         scopeType: "global",
@@ -132,6 +147,7 @@ async function main() {
 
   await db.insert(schema.members).values(members.map((member) => ({
     id: stableUuid(member.id),
+    organizationId: orgId,
     memberNumber: member.memberNumber,
     userId: member.userId ? stableUuid(member.userId) : null,
     fullName: member.fullName,
@@ -147,6 +163,7 @@ async function main() {
 
   await db.insert(schema.memberCredentials).values(members.map((member) => ({
     id: stableUuid(`credential:${member.id}`),
+    organizationId: orgId,
     memberId: stableUuid(member.id),
     qrToken: stableUuid(`qr:${member.credentialSlug}`),
     publicSlug: member.credentialSlug,
@@ -157,6 +174,7 @@ async function main() {
 
   await db.insert(schema.cases).values(cases.map((record) => ({
     id: stableUuid(record.id),
+    organizationId: orgId,
     caseNumber: record.caseNumber,
     title: record.title,
     description: record.description,
@@ -173,6 +191,7 @@ async function main() {
 
   await db.insert(schema.casePeople).values(cases.flatMap((record) => record.persons.map((person) => ({
     id: stableUuid(person.id),
+    organizationId: orgId,
     caseId: stableUuid(record.id),
     personType: person.personType,
     name: person.name,
@@ -183,6 +202,7 @@ async function main() {
 
   await db.insert(schema.caseActions).values(cases.flatMap((record) => record.actions.map((action) => ({
     id: stableUuid(action.id),
+    organizationId: orgId,
     caseId: stableUuid(record.id),
     actionType: action.actionType,
     description: action.description,
@@ -193,6 +213,7 @@ async function main() {
 
   await db.insert(schema.caseNotes).values(cases.map((record) => ({
     id: stableUuid(`note:${record.id}`),
+    organizationId: orgId,
     caseId: stableUuid(record.id),
     note: record.internalNotes.join("\n"),
     visibility: "internal",
@@ -201,6 +222,7 @@ async function main() {
 
   await db.insert(schema.caseEvidence).values(cases.flatMap((record) => record.evidence.map((evidence) => ({
     id: stableUuid(evidence.id),
+    organizationId: orgId,
     caseId: stableUuid(record.id),
     fileUrl: evidence.fileUrl,
     fileType: evidence.fileType,
@@ -211,6 +233,7 @@ async function main() {
 
   await db.insert(schema.events).values(events.map((event) => ({
     id: stableUuid(event.id),
+    organizationId: orgId,
     title: event.title,
     description: event.description,
     eventType: event.eventType,
@@ -227,6 +250,7 @@ async function main() {
 
   await db.insert(schema.eventEvidence).values(events.flatMap((event) => event.evidence.map((evidence) => ({
     id: stableUuid(evidence.id),
+    organizationId: orgId,
     eventId: stableUuid(event.id),
     fileUrl: evidence.fileUrl,
     type: evidence.fileType,
@@ -236,6 +260,7 @@ async function main() {
 
   await db.insert(schema.prevalenceStudies).values(prevalenceStudies.map((study) => ({
     id: stableUuid(study.id),
+    organizationId: orgId,
     name: study.name,
     description: study.description,
     methodology: study.methodology,
@@ -246,6 +271,7 @@ async function main() {
 
   await db.insert(schema.prevalenceMetrics).values(prevalenceMetrics.map((metric) => ({
     id: stableUuid(metric.id),
+    organizationId: orgId,
     studyId: stableUuid(metric.studyId),
     indicatorKey: metric.indicatorKey,
     label: metric.label,
@@ -255,6 +281,7 @@ async function main() {
 
   await db.insert(schema.prevalenceRecords).values(prevalenceRecords.map((record) => ({
     id: stableUuid(record.id),
+    organizationId: orgId,
     studyId: stableUuid(record.studyId),
     metricId: stableUuid(record.metricId),
     territoryId: stableUuid(record.territoryId),
@@ -267,6 +294,7 @@ async function main() {
 
   await db.insert(schema.fieldCommissions).values(fieldCommissions.map((commission) => ({
     id: stableUuid(commission.id),
+    organizationId: orgId,
     title: commission.title,
     commissionType: commission.commissionType,
     description: commission.description,
@@ -281,6 +309,7 @@ async function main() {
 
   await db.insert(schema.locationTrackingSettings).values(locationSettings.map((setting) => ({
     id: stableUuid(setting.id),
+    organizationId: orgId,
     userId: stableUuid(setting.userId),
     enabled: setting.enabled,
     mode: setting.mode,
@@ -294,6 +323,7 @@ async function main() {
 
   await db.insert(schema.territoryLocationSettings).values(territories.map((territory) => ({
     id: stableUuid(`territory-location:${territory.id}`),
+    organizationId: orgId,
     territoryId: stableUuid(territory.id),
     enabled: true,
     mode: "manual_check_in" as const,
@@ -303,6 +333,7 @@ async function main() {
 
   await db.insert(schema.delegateLocationPings).values(allLocationPings.map((ping) => ({
     id: stableUuid(ping.id),
+    organizationId: orgId,
     userId: stableUuid(ping.userId),
     fieldCommissionId: ping.fieldCommissionId ? stableUuid(ping.fieldCommissionId) : null,
     territoryId: stableUuid(ping.territoryId),
@@ -317,6 +348,7 @@ async function main() {
 
   await db.insert(schema.aiProviderConfigs).values(aiProviderConfigs.map((provider) => ({
     id: stableUuid(provider.id),
+    organizationId: orgId,
     providerKey: provider.providerKey,
     displayName: provider.displayName,
     enabled: provider.enabled,
@@ -329,6 +361,7 @@ async function main() {
 
   await db.insert(schema.aiPromptTemplates).values(aiPromptTemplates.map((prompt) => ({
     id: stableUuid(prompt.id),
+    organizationId: orgId,
     key: prompt.key,
     name: prompt.name,
     description: prompt.description,
@@ -347,6 +380,7 @@ async function main() {
 
   await db.insert(schema.aiConversations).values(aiConversations.map((conversation) => ({
     id: stableUuid(conversation.id),
+    organizationId: orgId,
     userId: stableUuid(conversation.userId),
     relatedCaseId: conversation.relatedCaseId ? stableUuid(conversation.relatedCaseId) : null,
     relatedEventId: conversation.relatedEventId ? stableUuid(conversation.relatedEventId) : null,
@@ -359,6 +393,7 @@ async function main() {
 
   await db.insert(schema.aiMessages).values(aiConversations.flatMap((conversation) => conversation.messages.map((message) => ({
     id: stableUuid(message.id),
+    organizationId: orgId,
     conversationId: stableUuid(conversation.id),
     role: message.role,
     content: message.content,
@@ -368,6 +403,7 @@ async function main() {
 
   await db.insert(schema.auditLogs).values(auditLogs.map((log) => ({
     id: stableUuid(log.id),
+    organizationId: orgId,
     actorId: stableUuid(log.actorId),
     action: log.action,
     entityType: log.entityType,

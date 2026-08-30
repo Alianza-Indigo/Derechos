@@ -62,6 +62,12 @@ function can(user: User, permissions: string[]) {
   return hasAnyPermission(user, permissions);
 }
 
+// Codigo corto de la organizacion (tenant) para los folios.
+async function orgCode(db: ReturnType<typeof getDb>, organizationId: string) {
+  const [org] = await db.select({ code: schema.organizations.code }).from(schema.organizations).where(eq(schema.organizations.id, organizationId)).limit(1);
+  return org?.code ?? "ORG";
+}
+
 // --------------------------------------------------------------------------
 // Miembros
 // --------------------------------------------------------------------------
@@ -79,10 +85,11 @@ export async function createMemberAction(_: ActionResult | null, formData: FormD
   }
 
   const db = getDb();
+  const org = user.organizationId;
   const duplicate = await db
     .select({ id: schema.members.id })
     .from(schema.members)
-    .where(sql`${schema.members.email} = ${parsed.data.email} or ${schema.members.phone} = ${parsed.data.phone}`)
+    .where(and(eq(schema.members.organizationId, org), sql`(${schema.members.email} = ${parsed.data.email} or ${schema.members.phone} = ${parsed.data.phone})`))
     .limit(1);
   if (duplicate.length) {
     return { ok: false, message: "Ya existe un miembro con ese correo o telefono." };
@@ -91,18 +98,19 @@ export async function createMemberAction(_: ActionResult | null, formData: FormD
   const territoryMembers = await db
     .select({ fullName: schema.members.fullName })
     .from(schema.members)
-    .where(eq(schema.members.territoryId, parsed.data.territoryId));
+    .where(and(eq(schema.members.organizationId, org), eq(schema.members.territoryId, parsed.data.territoryId)));
   const normalizedNew = normalizeSearch(parsed.data.fullName);
   if (territoryMembers.some((member) => normalizeSearch(member.fullName) === normalizedNew)) {
     return { ok: false, message: "Ya existe un miembro con un nombre muy similar en ese territorio. Verifica posibles duplicados." };
   }
 
-  const [{ total }] = await db.select({ total: sql<number>`count(*)::int` }).from(schema.members);
+  const [{ total }] = await db.select({ total: sql<number>`count(*)::int` }).from(schema.members).where(eq(schema.members.organizationId, org));
   const id = crypto.randomUUID();
   const slug = `credencial-${crypto.randomUUID().slice(0, 8)}`;
-  const memberNumber = `ORG-CHH-${String(total + 1).padStart(6, "0")}`;
+  const memberNumber = `${await orgCode(db, org)}-${String(total + 1).padStart(6, "0")}`;
   await db.insert(schema.members).values({
     id,
+    organizationId: org,
     memberNumber,
     fullName: parsed.data.fullName,
     birthDate: new Date(parsed.data.birthDate),
@@ -116,6 +124,7 @@ export async function createMemberAction(_: ActionResult | null, formData: FormD
     joinedAt: new Date(),
   });
   await db.insert(schema.memberCredentials).values({
+    organizationId: org,
     memberId: id,
     qrToken: crypto.randomUUID(),
     publicSlug: slug,
@@ -143,7 +152,7 @@ export async function updateMemberPositionAction(_: ActionResult | null, formDat
   }
   const db = getDb();
   const position = parsed.data.position?.trim() || null;
-  await db.update(schema.members).set({ position, updatedAt: new Date() }).where(eq(schema.members.id, parsed.data.memberId));
+  await db.update(schema.members).set({ position, updatedAt: new Date() }).where(and(eq(schema.members.id, parsed.data.memberId), eq(schema.members.organizationId, user.organizationId)));
   await writeAuditLog({ actorId: user.id, action: "member.position_update", entityType: "member", entityId: parsed.data.memberId, after: { position } });
   revalidatePath(`/miembros/${parsed.data.memberId}`);
   revalidatePath("/miembros");
@@ -166,18 +175,19 @@ export async function setMemberStatusAction(_: ActionResult | null, formData: Fo
     return { ok: false, message: "No tienes acceso a este miembro." };
   }
   const db = getDb();
-  const [record] = await db.select().from(schema.members).where(eq(schema.members.id, parsed.data.memberId)).limit(1);
-  await db.update(schema.members).set({ status: parsed.data.status, updatedAt: new Date() }).where(eq(schema.members.id, parsed.data.memberId));
+  const org = user.organizationId;
+  const [record] = await db.select().from(schema.members).where(and(eq(schema.members.id, parsed.data.memberId), eq(schema.members.organizationId, org))).limit(1);
+  await db.update(schema.members).set({ status: parsed.data.status, updatedAt: new Date() }).where(and(eq(schema.members.id, parsed.data.memberId), eq(schema.members.organizationId, org)));
 
   if (parsed.data.status === "baja" || parsed.data.status === "fallecido") {
-    await db.update(schema.memberCredentials).set({ status: "revocada" }).where(eq(schema.memberCredentials.memberId, parsed.data.memberId));
+    await db.update(schema.memberCredentials).set({ status: "revocada" }).where(and(eq(schema.memberCredentials.memberId, parsed.data.memberId), eq(schema.memberCredentials.organizationId, org)));
     if (record.userId) {
-      await db.update(schema.users).set({ status: "disabled", updatedAt: new Date() }).where(eq(schema.users.id, record.userId));
+      await db.update(schema.users).set({ status: "disabled", updatedAt: new Date() }).where(and(eq(schema.users.id, record.userId), eq(schema.users.organizationId, org)));
     }
   } else if (parsed.data.status === "activo") {
-    await db.update(schema.memberCredentials).set({ status: "activa" }).where(eq(schema.memberCredentials.memberId, parsed.data.memberId));
+    await db.update(schema.memberCredentials).set({ status: "activa" }).where(and(eq(schema.memberCredentials.memberId, parsed.data.memberId), eq(schema.memberCredentials.organizationId, org)));
     if (record.userId) {
-      await db.update(schema.users).set({ status: "active", updatedAt: new Date() }).where(eq(schema.users.id, record.userId));
+      await db.update(schema.users).set({ status: "active", updatedAt: new Date() }).where(and(eq(schema.users.id, record.userId), eq(schema.users.organizationId, org)));
     }
   }
   await writeAuditLog({ actorId: user.id, action: "member.status_change", entityType: "member", entityId: parsed.data.memberId, before: { status: record.status }, after: { status: parsed.data.status } });
@@ -198,19 +208,20 @@ export async function deleteMemberAction(_: ActionResult | null, formData: FormD
     return { ok: false, message: "Escribe ELIMINAR para confirmar el borrado definitivo." };
   }
   const db = getDb();
-  const [record] = await db.select().from(schema.members).where(eq(schema.members.id, parsed.data.memberId)).limit(1);
+  const org = user.organizationId;
+  const [record] = await db.select().from(schema.members).where(and(eq(schema.members.id, parsed.data.memberId), eq(schema.members.organizationId, org))).limit(1);
   if (!record) {
     return { ok: false, message: "El miembro no existe." };
   }
   if (record.userId) {
     return { ok: false, message: "Este miembro tiene cuenta de portal e historial ligado. Da de baja en lugar de eliminar." };
   }
-  const credentials = await db.select({ id: schema.memberCredentials.id }).from(schema.memberCredentials).where(eq(schema.memberCredentials.memberId, parsed.data.memberId));
+  const credentials = await db.select({ id: schema.memberCredentials.id }).from(schema.memberCredentials).where(and(eq(schema.memberCredentials.memberId, parsed.data.memberId), eq(schema.memberCredentials.organizationId, org)));
   for (const credential of credentials) {
     await db.delete(schema.credentialVerificationLogs).where(eq(schema.credentialVerificationLogs.credentialId, credential.id));
   }
-  await db.delete(schema.memberCredentials).where(eq(schema.memberCredentials.memberId, parsed.data.memberId));
-  await db.delete(schema.members).where(eq(schema.members.id, parsed.data.memberId));
+  await db.delete(schema.memberCredentials).where(and(eq(schema.memberCredentials.memberId, parsed.data.memberId), eq(schema.memberCredentials.organizationId, org)));
+  await db.delete(schema.members).where(and(eq(schema.members.id, parsed.data.memberId), eq(schema.members.organizationId, org)));
   await writeAuditLog({ actorId: user.id, action: "member.delete", entityType: "member", entityId: parsed.data.memberId, before: { memberNumber: record.memberNumber, fullName: record.fullName } });
   redirect("/miembros");
 }
@@ -233,11 +244,13 @@ export async function createCaseAction(_: ActionResult | null, formData: FormDat
   const d = parsed.data;
 
   const db = getDb();
-  const [{ total }] = await db.select({ total: sql<number>`count(*)::int` }).from(schema.cases);
+  const org = user.organizationId;
+  const [{ total }] = await db.select({ total: sql<number>`count(*)::int` }).from(schema.cases).where(eq(schema.cases.organizationId, org));
   const id = crypto.randomUUID();
-  const caseNumber = `CASO-2026-CHH-${String(total + 1).padStart(4, "0")}`;
+  const caseNumber = `${await orgCode(db, org)}-CASO-${new Date().getFullYear()}-${String(total + 1).padStart(4, "0")}`;
   await db.insert(schema.cases).values({
     id,
+    organizationId: org,
     caseNumber,
     title: d.title,
     description: d.description,
@@ -256,6 +269,7 @@ export async function createCaseAction(_: ActionResult | null, formData: FormDat
   // Persona afectada (victima)
   const people: Array<typeof schema.casePeople.$inferInsert> = [
     {
+      organizationId: org,
       caseId: id,
       personType: "victima",
       name: d.victimName,
@@ -270,6 +284,7 @@ export async function createCaseAction(_: ActionResult | null, formData: FormDat
   // Quien reporta, si es distinto de la persona afectada
   if (d.reporterName?.trim()) {
     people.push({
+      organizationId: org,
       caseId: id,
       personType: "solicitante",
       name: d.reporterName.trim(),
@@ -281,6 +296,7 @@ export async function createCaseAction(_: ActionResult | null, formData: FormDat
   // Autoridad o institucion senalada
   if (d.authorityName?.trim()) {
     people.push({
+      organizationId: org,
       caseId: id,
       personType: "autoridad",
       name: d.authorityName.trim(),
@@ -292,6 +308,7 @@ export async function createCaseAction(_: ActionResult | null, formData: FormDat
   await db.insert(schema.casePeople).values(people);
 
   await db.insert(schema.caseStatusHistory).values({
+    organizationId: org,
     caseId: id,
     fromStatus: null,
     toStatus: d.status,
@@ -299,6 +316,7 @@ export async function createCaseAction(_: ActionResult | null, formData: FormDat
     changedBy: user.id,
   });
   await db.insert(schema.caseNotes).values({
+    organizationId: org,
     caseId: id,
     note: "Caso creado desde el formato de admision.",
     createdBy: user.id,
@@ -317,7 +335,7 @@ export async function updateCaseStatusAction(_: ActionResult | null, formData: F
     return { ok: false, message: parsed.error.issues[0]?.message ?? "Cambio invalido." };
   }
   const db = getDb();
-  const [current] = await db.select().from(schema.cases).where(eq(schema.cases.id, parsed.data.caseId)).limit(1);
+  const [current] = await db.select().from(schema.cases).where(and(eq(schema.cases.id, parsed.data.caseId), eq(schema.cases.organizationId, user.organizationId))).limit(1);
   if (!current) {
     return { ok: false, message: "Caso no encontrado." };
   }
@@ -328,8 +346,9 @@ export async function updateCaseStatusAction(_: ActionResult | null, formData: F
     status: parsed.data.status,
     closedAt: ["Resuelto", "Cerrado sin accion", "Archivado"].includes(parsed.data.status) ? new Date() : null,
     updatedAt: new Date(),
-  }).where(eq(schema.cases.id, parsed.data.caseId));
+  }).where(and(eq(schema.cases.id, parsed.data.caseId), eq(schema.cases.organizationId, user.organizationId)));
   await db.insert(schema.caseStatusHistory).values({
+    organizationId: user.organizationId,
     caseId: parsed.data.caseId,
     fromStatus: current.status,
     toStatus: parsed.data.status,
@@ -352,13 +371,14 @@ export async function addEvidenceAction(_: ActionResult | null, formData: FormDa
   }
   const db = getDb();
   if (parsed.data.entityType === "case") {
-    const [current] = await db.select().from(schema.cases).where(eq(schema.cases.id, parsed.data.entityId)).limit(1);
+    const [current] = await db.select().from(schema.cases).where(and(eq(schema.cases.id, parsed.data.entityId), eq(schema.cases.organizationId, user.organizationId))).limit(1);
     if (!current || !(canAccessTerritory(user, current.territoryId) || current.assignedTo === user.id || current.openedBy === user.id)) {
       return { ok: false, message: "Caso no encontrado o sin acceso." };
     }
     const id = crypto.randomUUID();
     await db.insert(schema.caseEvidence).values({
       id,
+      organizationId: user.organizationId,
       caseId: parsed.data.entityId,
       fileUrl: parsed.data.fileUrl,
       fileType: parsed.data.fileType,
@@ -369,13 +389,14 @@ export async function addEvidenceAction(_: ActionResult | null, formData: FormDa
     revalidatePath(`/casos/${parsed.data.entityId}`);
     return { ok: true, message: "Evidencia protegida registrada." };
   }
-  const [current] = await db.select().from(schema.events).where(eq(schema.events.id, parsed.data.entityId)).limit(1);
+  const [current] = await db.select().from(schema.events).where(and(eq(schema.events.id, parsed.data.entityId), eq(schema.events.organizationId, user.organizationId))).limit(1);
   if (!current || !canAccessTerritory(user, current.territoryId)) {
     return { ok: false, message: "Evento no encontrado o sin acceso." };
   }
   const id = crypto.randomUUID();
   await db.insert(schema.eventEvidence).values({
     id,
+    organizationId: user.organizationId,
     eventId: parsed.data.entityId,
     fileUrl: parsed.data.fileUrl,
     type: parsed.data.fileType,
@@ -386,9 +407,9 @@ export async function addEvidenceAction(_: ActionResult | null, formData: FormDa
   return { ok: true, message: "Evidencia de evento registrada." };
 }
 
-async function assertCaseAccess(userId: string, canTerritory: (t: string) => boolean, caseId: string) {
+async function assertCaseAccess(userId: string, organizationId: string, canTerritory: (t: string) => boolean, caseId: string) {
   const db = getDb();
-  const [record] = await db.select().from(schema.cases).where(eq(schema.cases.id, caseId)).limit(1);
+  const [record] = await db.select().from(schema.cases).where(and(eq(schema.cases.id, caseId), eq(schema.cases.organizationId, organizationId))).limit(1);
   if (!record) {
     return null;
   }
@@ -404,12 +425,13 @@ export async function addCasePersonAction(_: ActionResult | null, formData: Form
   if (!parsed.success) {
     return { ok: false, message: parsed.error.issues[0]?.message ?? "Datos invalidos." };
   }
-  const record = await assertCaseAccess(user.id, (t) => canAccessTerritory(user, t), parsed.data.caseId);
+  const record = await assertCaseAccess(user.id, user.organizationId, (t) => canAccessTerritory(user, t), parsed.data.caseId);
   if (!record) {
     return { ok: false, message: "Caso no encontrado o sin acceso." };
   }
   const db = getDb();
   await db.insert(schema.casePeople).values({
+    organizationId: user.organizationId,
     caseId: parsed.data.caseId,
     personType: parsed.data.personType,
     name: parsed.data.name,
@@ -431,12 +453,13 @@ export async function addCaseActionAction(_: ActionResult | null, formData: Form
   if (!parsed.success) {
     return { ok: false, message: parsed.error.issues[0]?.message ?? "Datos invalidos." };
   }
-  const record = await assertCaseAccess(user.id, (t) => canAccessTerritory(user, t), parsed.data.caseId);
+  const record = await assertCaseAccess(user.id, user.organizationId, (t) => canAccessTerritory(user, t), parsed.data.caseId);
   if (!record) {
     return { ok: false, message: "Caso no encontrado o sin acceso." };
   }
   const db = getDb();
   await db.insert(schema.caseActions).values({
+    organizationId: user.organizationId,
     caseId: parsed.data.caseId,
     actionType: parsed.data.actionType,
     description: parsed.data.description,
@@ -465,6 +488,7 @@ export async function createEventAction(_: ActionResult | null, formData: FormDa
   const id = crypto.randomUUID();
   await db.insert(schema.events).values({
     id,
+    organizationId: user.organizationId,
     title: parsed.data.title,
     description: parsed.data.description,
     eventType: parsed.data.eventType,
@@ -500,6 +524,7 @@ export async function createCommissionAction(_: ActionResult | null, formData: F
   const id = crypto.randomUUID();
   await db.insert(schema.fieldCommissions).values({
     id,
+    organizationId: user.organizationId,
     title: parsed.data.title,
     commissionType: parsed.data.commissionType,
     description: parsed.data.description,
@@ -530,6 +555,7 @@ export async function createCheckInAction(_: ActionResult | null, formData: Form
   const id = crypto.randomUUID();
   await db.insert(schema.delegateLocationPings).values({
     id,
+    organizationId: user.organizationId,
     userId: user.id,
     fieldCommissionId: parsed.data.fieldCommissionId || null,
     territoryId: parsed.data.territoryId,
@@ -571,6 +597,7 @@ export async function setOwnLocationStateAction(_: ActionResult | null, formData
     }).where(eq(schema.locationTrackingSettings.id, existing.id));
   } else {
     await db.insert(schema.locationTrackingSettings).values({
+      organizationId: user.organizationId,
       userId: user.id,
       enabled: !parsed.data.paused,
       disabledReason: parsed.data.paused ? reason : null,
@@ -601,7 +628,7 @@ export async function runAssistantAction(_: ActionResult | null, formData: FormD
     return { ok: false, message: parsed.error.issues[0]?.message ?? "Solicitud invalida." };
   }
   const db = getDb();
-  const [row] = await db.select().from(schema.aiPromptTemplates).where(eq(schema.aiPromptTemplates.id, parsed.data.promptTemplateId)).limit(1);
+  const [row] = await db.select().from(schema.aiPromptTemplates).where(and(eq(schema.aiPromptTemplates.id, parsed.data.promptTemplateId), eq(schema.aiPromptTemplates.organizationId, user.organizationId))).limit(1);
   if (!row || !row.enabled) {
     return { ok: false, message: "El prompt no existe o esta desactivado." };
   }
@@ -693,8 +720,10 @@ export async function runAssistantAction(_: ActionResult | null, formData: FormD
 
   const conversationId = crypto.randomUUID();
   const runId = crypto.randomUUID();
+  const org = user.organizationId;
   await db.insert(schema.aiConversations).values({
     id: conversationId,
+    organizationId: org,
     userId: user.id,
     relatedCaseId: parsed.data.relatedCaseId || null,
     relatedEventId: parsed.data.relatedEventId || null,
@@ -704,11 +733,12 @@ export async function runAssistantAction(_: ActionResult | null, formData: FormD
     status: "activa",
   });
   await db.insert(schema.aiMessages).values([
-    { conversationId, role: "user", content: parsed.data.message, metadata: {} },
-    { conversationId, role: "assistant", content: result.output, metadata: { provider: result.provider, model: result.model } },
+    { organizationId: org, conversationId, role: "user", content: parsed.data.message, metadata: {} },
+    { organizationId: org, conversationId, role: "assistant", content: result.output, metadata: { provider: result.provider, model: result.model } },
   ]);
   await db.insert(schema.aiRuns).values({
     id: runId,
+    organizationId: org,
     conversationId,
     promptTemplateId: prompt.id,
     input: { message: parsed.data.message },
@@ -732,11 +762,12 @@ export async function submitAiFeedbackAction(_: ActionResult | null, formData: F
     return { ok: false, message: parsed.error.issues[0]?.message ?? "Calificacion invalida." };
   }
   const db = getDb();
-  const [run] = await db.select({ id: schema.aiRuns.id }).from(schema.aiRuns).where(eq(schema.aiRuns.id, parsed.data.aiRunId)).limit(1);
+  const [run] = await db.select({ id: schema.aiRuns.id }).from(schema.aiRuns).where(and(eq(schema.aiRuns.id, parsed.data.aiRunId), eq(schema.aiRuns.organizationId, user.organizationId))).limit(1);
   if (!run) {
     return { ok: false, message: "No se encontro la respuesta a calificar." };
   }
   await db.insert(schema.aiFeedback).values({
+    organizationId: user.organizationId,
     aiRunId: parsed.data.aiRunId,
     userId: user.id,
     rating: parsed.data.rating,
@@ -757,13 +788,15 @@ export async function savePromptAction(_: ActionResult | null, formData: FormDat
   }
 
   const db = getDb();
+  const org = user.organizationId;
   const [{ version }] = await db
     .select({ version: sql<number>`coalesce(max(${schema.aiPromptTemplates.version}), 0)::int + 1` })
     .from(schema.aiPromptTemplates)
-    .where(eq(schema.aiPromptTemplates.key, parsed.data.key));
+    .where(and(eq(schema.aiPromptTemplates.organizationId, org), eq(schema.aiPromptTemplates.key, parsed.data.key)));
   const id = crypto.randomUUID();
   await db.insert(schema.aiPromptTemplates).values({
     id,
+    organizationId: org,
     key: parsed.data.key,
     name: parsed.data.name,
     description: parsed.data.description,
@@ -801,7 +834,7 @@ export async function updateProviderConfigAction(_: ActionResult | null, formDat
     ...(apiKey ? { apiKey } : {}),
     updatedBy: user.id,
     updatedAt: new Date(),
-  }).where(eq(schema.aiProviderConfigs.providerKey, parsed.data.providerKey));
+  }).where(and(eq(schema.aiProviderConfigs.organizationId, user.organizationId), eq(schema.aiProviderConfigs.providerKey, parsed.data.providerKey)));
   await writeAuditLog({ actorId: user.id, action: "provider.update", entityType: "ai_provider_config", entityId: parsed.data.providerKey, after: { enabled: parsed.data.enabled, defaultModel: parsed.data.defaultModel, priority: parsed.data.priority, apiKeyChanged: Boolean(apiKey) } });
   revalidatePath("/asistente/proveedores");
   return { ok: true, message: "Proveedor actualizado y auditado." };
@@ -823,6 +856,7 @@ export async function createPrevalenceRecordAction(_: ActionResult | null, formD
   const id = crypto.randomUUID();
   await db.insert(schema.prevalenceRecords).values({
     id,
+    organizationId: user.organizationId,
     studyId: parsed.data.studyId,
     metricId: parsed.data.metricId,
     territoryId: parsed.data.territoryId,
@@ -848,6 +882,7 @@ export async function createStudyAction(_: ActionResult | null, formData: FormDa
   }
   const db = getDb();
   const [inserted] = await db.insert(schema.prevalenceStudies).values({
+    organizationId: user.organizationId,
     name: parsed.data.name,
     description: parsed.data.description,
     methodology: parsed.data.methodology,
@@ -871,6 +906,7 @@ export async function createMetricAction(_: ActionResult | null, formData: FormD
   }
   const db = getDb();
   const [inserted] = await db.insert(schema.prevalenceMetrics).values({
+    organizationId: user.organizationId,
     studyId: parsed.data.studyId,
     indicatorKey: parsed.data.indicatorKey,
     label: parsed.data.label,
@@ -910,7 +946,6 @@ export async function updateOrganizationAction(_: ActionResult | null, formData:
     return { ok: false, message: parsed.error.issues[0]?.message ?? "Datos invalidos." };
   }
   const db = getDb();
-  const [existing] = await db.select({ id: schema.organizations.id }).from(schema.organizations).limit(1);
   const values = {
     name: parsed.data.name,
     legalName: parsed.data.legalName || null,
@@ -921,12 +956,9 @@ export async function updateOrganizationAction(_: ActionResult | null, formData:
     aiEnabled: parsed.data.aiEnabled,
     updatedAt: new Date(),
   };
-  if (existing) {
-    await db.update(schema.organizations).set(values).where(eq(schema.organizations.id, existing.id));
-  } else {
-    await db.insert(schema.organizations).values(values);
-  }
-  await writeAuditLog({ actorId: user.id, action: "organization.update", entityType: "organization", entityId: existing?.id ?? "org", after: values });
+  // Solo se actualiza la organizacion (tenant) del propio usuario.
+  await db.update(schema.organizations).set(values).where(eq(schema.organizations.id, user.organizationId));
+  await writeAuditLog({ actorId: user.id, action: "organization.update", entityType: "organization", entityId: user.organizationId, after: values });
   revalidatePath("/configuracion");
   return { ok: true, message: "Configuracion institucional actualizada." };
 }
@@ -947,7 +979,7 @@ export async function updateLocationSettingAction(_: ActionResult | null, formDa
     retentionDays: parsed.data.retentionDays,
     updatedBy: user.id,
     updatedAt: new Date(),
-  }).where(eq(schema.locationTrackingSettings.id, parsed.data.id));
+  }).where(and(eq(schema.locationTrackingSettings.id, parsed.data.id), eq(schema.locationTrackingSettings.organizationId, user.organizationId)));
   await writeAuditLog({ actorId: user.id, action: "location_setting.update", entityType: "location_tracking_setting", entityId: parsed.data.id, after: { enabled: parsed.data.enabled, mode: parsed.data.mode, retentionDays: parsed.data.retentionDays } });
   revalidatePath("/configuracion");
   return { ok: true, message: "Ajuste de ubicacion actualizado." };
@@ -963,7 +995,7 @@ export async function updateTerritoryLocationSettingAction(_: ActionResult | nul
     return { ok: false, message: parsed.error.issues[0]?.message ?? "Datos invalidos." };
   }
   const db = getDb();
-  const [existing] = await db.select({ id: schema.territoryLocationSettings.id }).from(schema.territoryLocationSettings).where(eq(schema.territoryLocationSettings.territoryId, parsed.data.territoryId)).limit(1);
+  const [existing] = await db.select({ id: schema.territoryLocationSettings.id }).from(schema.territoryLocationSettings).where(and(eq(schema.territoryLocationSettings.organizationId, user.organizationId), eq(schema.territoryLocationSettings.territoryId, parsed.data.territoryId))).limit(1);
   const values = {
     enabled: parsed.data.enabled,
     mode: parsed.data.mode,
@@ -974,7 +1006,7 @@ export async function updateTerritoryLocationSettingAction(_: ActionResult | nul
   if (existing) {
     await db.update(schema.territoryLocationSettings).set(values).where(eq(schema.territoryLocationSettings.id, existing.id));
   } else {
-    await db.insert(schema.territoryLocationSettings).values({ territoryId: parsed.data.territoryId, ...values });
+    await db.insert(schema.territoryLocationSettings).values({ organizationId: user.organizationId, territoryId: parsed.data.territoryId, ...values });
   }
   await writeAuditLog({ actorId: user.id, action: "territory_location_setting.update", entityType: "territory_location_setting", entityId: parsed.data.territoryId, after: values });
   revalidatePath("/configuracion");
@@ -991,7 +1023,8 @@ export async function duplicatePromptAction(_: ActionResult | null, formData: Fo
   }
   const promptId = String(formData.get("promptId") ?? "");
   const db = getDb();
-  const [source] = await db.select().from(schema.aiPromptTemplates).where(eq(schema.aiPromptTemplates.id, promptId)).limit(1);
+  const org = user.organizationId;
+  const [source] = await db.select().from(schema.aiPromptTemplates).where(and(eq(schema.aiPromptTemplates.id, promptId), eq(schema.aiPromptTemplates.organizationId, org))).limit(1);
   if (!source) {
     return { ok: false, message: "Prompt no encontrado." };
   }
@@ -999,8 +1032,9 @@ export async function duplicatePromptAction(_: ActionResult | null, formData: Fo
   const [{ version }] = await db
     .select({ version: sql<number>`coalesce(max(${schema.aiPromptTemplates.version}), 0)::int + 1` })
     .from(schema.aiPromptTemplates)
-    .where(eq(schema.aiPromptTemplates.key, newKey));
+    .where(and(eq(schema.aiPromptTemplates.organizationId, org), eq(schema.aiPromptTemplates.key, newKey)));
   await db.insert(schema.aiPromptTemplates).values({
+    organizationId: org,
     key: newKey,
     name: `${source.name} (copia)`,
     description: source.description,
@@ -1026,15 +1060,17 @@ export async function restorePromptVersionAction(_: ActionResult | null, formDat
   }
   const sourceId = String(formData.get("promptId") ?? "");
   const db = getDb();
-  const [source] = await db.select().from(schema.aiPromptTemplates).where(eq(schema.aiPromptTemplates.id, sourceId)).limit(1);
+  const org = user.organizationId;
+  const [source] = await db.select().from(schema.aiPromptTemplates).where(and(eq(schema.aiPromptTemplates.id, sourceId), eq(schema.aiPromptTemplates.organizationId, org))).limit(1);
   if (!source) {
     return { ok: false, message: "Version no encontrada." };
   }
   const [{ version }] = await db
     .select({ version: sql<number>`coalesce(max(${schema.aiPromptTemplates.version}), 0)::int + 1` })
     .from(schema.aiPromptTemplates)
-    .where(eq(schema.aiPromptTemplates.key, source.key));
+    .where(and(eq(schema.aiPromptTemplates.organizationId, org), eq(schema.aiPromptTemplates.key, source.key)));
   await db.insert(schema.aiPromptTemplates).values({
+    organizationId: org,
     key: source.key,
     name: source.name,
     description: source.description,
@@ -1130,7 +1166,9 @@ export async function purgeLocationHistoryAction(_: ActionResult | null, formDat
     return { ok: false, message: parsed.error.issues[0]?.message ?? "Solicitud invalida." };
   }
   const db = getDb();
-  const conditions: SQL[] = [];
+  // Siempre acotado al tenant del usuario: aun con scope "all" no puede
+  // purgar ubicaciones de otra organizacion.
+  const conditions: SQL[] = [eq(schema.delegateLocationPings.organizationId, user.organizationId)];
   if (parsed.data.scope === "territory") {
     if (!parsed.data.territoryId) {
       return { ok: false, message: "Selecciona el territorio a purgar." };
@@ -1178,7 +1216,8 @@ export async function createUserAction(_: ActionResult | null, formData: FormDat
   }
   const email = parsed.data.email.toLowerCase();
   const db = getDb();
-  const existing = await db.select({ id: schema.users.id }).from(schema.users).where(eq(schema.users.email, email)).limit(1);
+  const org = user.organizationId;
+  const existing = await db.select({ id: schema.users.id }).from(schema.users).where(and(eq(schema.users.organizationId, org), eq(schema.users.email, email))).limit(1);
   if (existing.length) {
     return { ok: false, message: "Ya existe un usuario con ese correo." };
   }
@@ -1189,6 +1228,7 @@ export async function createUserAction(_: ActionResult | null, formData: FormDat
   const id = crypto.randomUUID();
   await db.insert(schema.users).values({
     id,
+    organizationId: org,
     name: parsed.data.name,
     email,
     phone: parsed.data.phone || null,
@@ -1198,6 +1238,7 @@ export async function createUserAction(_: ActionResult | null, formData: FormDat
   });
   const scoped = Boolean(parsed.data.territoryId);
   await db.insert(schema.userRoles).values({
+    organizationId: org,
     userId: id,
     roleId,
     scopeType: scoped ? "territory" : "global",
@@ -1221,7 +1262,7 @@ export async function setUserStatusAction(_: ActionResult | null, formData: Form
     return { ok: false, message: "No puedes desactivar tu propia cuenta." };
   }
   const db = getDb();
-  await db.update(schema.users).set({ status: parsed.data.status, updatedAt: new Date() }).where(eq(schema.users.id, parsed.data.userId));
+  await db.update(schema.users).set({ status: parsed.data.status, updatedAt: new Date() }).where(and(eq(schema.users.id, parsed.data.userId), eq(schema.users.organizationId, user.organizationId)));
   await writeAuditLog({ actorId: user.id, action: "user.status_change", entityType: "user", entityId: parsed.data.userId, after: { status: parsed.data.status } });
   revalidatePath("/configuracion/usuarios");
   return { ok: true, message: `Usuario ${parsed.data.status === "active" ? "activado" : "desactivado"}.` };
@@ -1237,12 +1278,18 @@ export async function assignUserRoleAction(_: ActionResult | null, formData: For
     return { ok: false, message: parsed.error.issues[0]?.message ?? "Datos invalidos." };
   }
   const db = getDb();
+  const org = user.organizationId;
+  const [target] = await db.select({ id: schema.users.id }).from(schema.users).where(and(eq(schema.users.id, parsed.data.userId), eq(schema.users.organizationId, org))).limit(1);
+  if (!target) {
+    return { ok: false, message: "El usuario no pertenece a tu organizacion." };
+  }
   const roleId = await resolveRoleId(db, parsed.data.role);
   if (!roleId) {
     return { ok: false, message: "El rol seleccionado no existe." };
   }
   const scoped = Boolean(parsed.data.territoryId);
   await db.insert(schema.userRoles).values({
+    organizationId: org,
     userId: parsed.data.userId,
     roleId,
     scopeType: scoped ? "territory" : "global",
@@ -1274,6 +1321,7 @@ export async function removeUserRoleAction(_: ActionResult | null, formData: For
     return { ok: false, message: "El rol seleccionado no existe." };
   }
   const conditions: SQL[] = [
+    eq(schema.userRoles.organizationId, user.organizationId),
     eq(schema.userRoles.userId, parsed.data.userId),
     eq(schema.userRoles.roleId, roleId),
     eq(schema.userRoles.scopeType, parsed.data.scopeType),
@@ -1301,15 +1349,17 @@ export async function createMemberReportAction(_: ActionResult | null, formData:
     return { ok: false, message: parsed.error.issues[0]?.message ?? "Datos invalidos." };
   }
   const db = getDb();
-  const [{ total }] = await db.select({ total: sql<number>`count(*)::int` }).from(schema.cases);
+  const org = user.organizationId;
+  const [{ total }] = await db.select({ total: sql<number>`count(*)::int` }).from(schema.cases).where(eq(schema.cases.organizationId, org));
   const id = crypto.randomUUID();
-  const caseNumber = `CASO-2026-CHH-${String(total + 1).padStart(4, "0")}`;
+  const caseNumber = `${await orgCode(db, org)}-CASO-${new Date().getFullYear()}-${String(total + 1).padStart(4, "0")}`;
   // El miembro es quien abre el reporte; queda sin responsable asignado (se
   // asigna al propio miembro como marcador) y en estado "Nuevo" para que el
   // personal del territorio lo triage y reasigne.
   const d = parsed.data;
   await db.insert(schema.cases).values({
     id,
+    organizationId: org,
     caseNumber,
     title: d.title,
     description: d.description,
@@ -1329,7 +1379,8 @@ export async function createMemberReportAction(_: ActionResult | null, formData:
     ...(d.victimAgeGroup ? { grupoEdad: d.victimAgeGroup } : {}),
   };
   // Persona afectada: el propio miembro, o la persona que reporta a nombre de.
-  const people: Array<typeof schema.casePeople.$inferInsert> = [];
+  // organizationId se estampa al insertar (people.map mas abajo).
+  const people: Array<Omit<typeof schema.casePeople.$inferInsert, "organizationId">> = [];
   if (d.onBehalf && d.affectedName?.trim()) {
     people.push({
       caseId: id,
@@ -1369,8 +1420,9 @@ export async function createMemberReportAction(_: ActionResult | null, formData:
       consentStatus: "no_aplica",
     });
   }
-  await db.insert(schema.casePeople).values(people);
+  await db.insert(schema.casePeople).values(people.map((p) => ({ ...p, organizationId: org })));
   await db.insert(schema.caseStatusHistory).values({
+    organizationId: org,
     caseId: id,
     fromStatus: null,
     toStatus: "Nuevo",
@@ -1407,7 +1459,7 @@ export async function updateMemberPhotoAction(_: ActionResult | null, formData: 
     }
     memberId = self.id;
   }
-  await db.update(schema.members).set({ photoUrl: parsed.data.photoUrl, updatedAt: new Date() }).where(eq(schema.members.id, memberId));
+  await db.update(schema.members).set({ photoUrl: parsed.data.photoUrl, updatedAt: new Date() }).where(and(eq(schema.members.id, memberId), eq(schema.members.organizationId, actor.organizationId)));
   await writeAuditLog({ actorId: actor.id, action: "member.photo_update", entityType: "member", entityId: memberId, after: { photoUrl: parsed.data.photoUrl } });
   revalidatePath("/portal/perfil");
   revalidatePath(`/miembros/${memberId}`);
@@ -1430,7 +1482,7 @@ export async function updateMemberProfileAction(_: ActionResult | null, formData
     email: parsed.data.email,
     address: parsed.data.address,
     updatedAt: new Date(),
-  }).where(eq(schema.members.id, member.id));
+  }).where(and(eq(schema.members.id, member.id), eq(schema.members.organizationId, user.organizationId)));
   await writeAuditLog({ actorId: user.id, action: "member.profile_update", entityType: "member", entityId: member.id, after: { phone: parsed.data.phone, email: parsed.data.email } });
   revalidatePath("/portal/perfil");
   return { ok: true, message: "Datos actualizados." };
@@ -1452,22 +1504,24 @@ export async function setMemberAccessAction(_: ActionResult | null, formData: Fo
     return { ok: false, message: "No tienes acceso a este miembro." };
   }
   const db = getDb();
+  const org = actor.organizationId;
   const passwordHash = await hash(parsed.data.password, 12);
-  const [record] = await db.select().from(schema.members).where(eq(schema.members.id, parsed.data.memberId)).limit(1);
+  const [record] = await db.select().from(schema.members).where(and(eq(schema.members.id, parsed.data.memberId), eq(schema.members.organizationId, org))).limit(1);
   if (record.userId) {
-    await db.update(schema.users).set({ passwordHash, status: "active", updatedAt: new Date() }).where(eq(schema.users.id, record.userId));
+    await db.update(schema.users).set({ passwordHash, status: "active", updatedAt: new Date() }).where(and(eq(schema.users.id, record.userId), eq(schema.users.organizationId, org)));
     await writeAuditLog({ actorId: actor.id, action: "member.access_reset", entityType: "member", entityId: member.id, after: { userId: record.userId } });
     revalidatePath(`/miembros/${member.id}`);
     return { ok: true, message: "Contrasena del portal restablecida." };
   }
   // Sin cuenta previa: crear usuario ligado con rol member en su territorio.
-  const existing = await db.select({ id: schema.users.id }).from(schema.users).where(eq(schema.users.email, record.email.toLowerCase())).limit(1);
+  const existing = await db.select({ id: schema.users.id }).from(schema.users).where(and(eq(schema.users.organizationId, org), eq(schema.users.email, record.email.toLowerCase()))).limit(1);
   if (existing.length) {
     return { ok: false, message: "Ya existe un usuario con el correo del miembro. Usa otro correo o vincula manualmente." };
   }
   const userId = crypto.randomUUID();
   await db.insert(schema.users).values({
     id: userId,
+    organizationId: org,
     name: record.fullName,
     email: record.email.toLowerCase(),
     phone: record.phone,
@@ -1477,9 +1531,9 @@ export async function setMemberAccessAction(_: ActionResult | null, formData: Fo
   });
   const roleId = await resolveRoleId(db, "member");
   if (roleId) {
-    await db.insert(schema.userRoles).values({ userId, roleId, scopeType: "territory", scopeId: record.territoryId }).onConflictDoNothing();
+    await db.insert(schema.userRoles).values({ organizationId: org, userId, roleId, scopeType: "territory", scopeId: record.territoryId }).onConflictDoNothing();
   }
-  await db.update(schema.members).set({ userId, updatedAt: new Date() }).where(eq(schema.members.id, member.id));
+  await db.update(schema.members).set({ userId, updatedAt: new Date() }).where(and(eq(schema.members.id, member.id), eq(schema.members.organizationId, org)));
   await writeAuditLog({ actorId: actor.id, action: "member.access_provision", entityType: "member", entityId: member.id, after: { userId } });
   revalidatePath(`/miembros/${member.id}`);
   return { ok: true, message: "Acceso al portal creado. El miembro ya puede iniciar sesion con su correo." };
@@ -1499,7 +1553,7 @@ export async function reassignCaseAction(_: ActionResult | null, formData: FormD
     return { ok: false, message: "No tienes acceso a este caso." };
   }
   const db = getDb();
-  await db.update(schema.cases).set({ assignedTo: parsed.data.assignedTo }).where(eq(schema.cases.id, parsed.data.caseId));
+  await db.update(schema.cases).set({ assignedTo: parsed.data.assignedTo }).where(and(eq(schema.cases.id, parsed.data.caseId), eq(schema.cases.organizationId, user.organizationId)));
   await writeAuditLog({ actorId: user.id, action: "case.reassign", entityType: "case", entityId: parsed.data.caseId, before: { assignedTo: record.assignedTo }, after: { assignedTo: parsed.data.assignedTo } });
   revalidatePath(`/casos/${parsed.data.caseId}`);
   return { ok: true, message: "Responsable actualizado." };

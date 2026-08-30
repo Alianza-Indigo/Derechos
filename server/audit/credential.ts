@@ -10,7 +10,7 @@ export async function logCredentialVerification(input: {
 }) {
   const db = getDb();
   const [credential] = await db
-    .select({ id: schema.memberCredentials.id })
+    .select({ id: schema.memberCredentials.id, organizationId: schema.memberCredentials.organizationId })
     .from(schema.memberCredentials)
     .where(eq(schema.memberCredentials.publicSlug, input.publicSlug))
     .limit(1);
@@ -20,6 +20,7 @@ export async function logCredentialVerification(input: {
   }
 
   await db.insert(schema.credentialVerificationLogs).values({
+    organizationId: credential.organizationId,
     credentialId: credential.id,
     publicSlug: input.publicSlug,
     ipHash: input.ip ? digest(input.ip) : null,

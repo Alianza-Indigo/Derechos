@@ -39,19 +39,19 @@ export const territories: Territory[] = [
 ];
 
 export const users: User[] = [
-  { id: "u_admin", name: "Admin General", email: "admin@demo.org", phone: "6140000000", status: "active", roles: ["super_admin"], territoryId: "mx" },
-  { id: "u_direccion", name: "Direccion Nacional", email: "direccion@demo.org", phone: "6140000001", status: "active", roles: ["national_direction"], territoryId: "mx" },
-  { id: "u_estatal", name: "Coordinacion Chihuahua", email: "chihuahua@demo.org", phone: "6140000002", status: "active", roles: ["state_coordination"], territoryId: "chh" },
-  { id: "u_municipal", name: "Coordinacion Juarez", email: "juarez@demo.org", phone: "6560000000", status: "active", roles: ["municipal_coordination"], territoryId: "cdj" },
-  { id: "u_defensor", name: "Defensora de Casos", email: "casos@demo.org", phone: "6140000003", status: "active", roles: ["case_manager"], territoryId: "chh" },
-  { id: "u_eventos", name: "Equipo de Eventos", email: "eventos@demo.org", phone: "6140000004", status: "active", roles: ["events_team"], territoryId: "chh" },
-  { id: "u_auditor", name: "Auditoria Interna", email: "auditoria@demo.org", phone: "6140000005", status: "active", roles: ["auditor"], territoryId: "mx" },
-  { id: "u_del_1", name: "Delegada Norte", email: "delegada.norte@demo.org", phone: "6560000001", status: "active", roles: ["territorial_delegate"], territoryId: "cdj" },
-  { id: "u_del_2", name: "Delegado Centro", email: "delegado.centro@demo.org", phone: "6140000006", status: "active", roles: ["territorial_delegate"], territoryId: "chc" },
-  { id: "u_del_3", name: "Delegada Estatal", email: "delegada.estatal@demo.org", phone: "6140000007", status: "active", roles: ["territorial_delegate"], territoryId: "chh" },
-  { id: "u_com_1", name: "Comisionada Campo A", email: "comisionada.a@demo.org", phone: "6560000002", status: "active", roles: ["field_commissioner"], territoryId: "cdj" },
-  { id: "u_com_2", name: "Comisionado Campo B", email: "comisionado.b@demo.org", phone: "6140000008", status: "active", roles: ["field_commissioner"], territoryId: "chc" },
-  { id: "u_com_3", name: "Comisionada Campo C", email: "comisionada.c@demo.org", phone: "6140000009", status: "active", roles: ["field_commissioner"], territoryId: "chh" },
+  { id: "u_admin", organizationId: organization.id, name: "Admin General", email: "admin@demo.org", phone: "6140000000", status: "active", roles: ["super_admin"], territoryId: "mx" },
+  { id: "u_direccion", organizationId: organization.id, name: "Direccion Nacional", email: "direccion@demo.org", phone: "6140000001", status: "active", roles: ["national_direction"], territoryId: "mx" },
+  { id: "u_estatal", organizationId: organization.id, name: "Coordinacion Chihuahua", email: "chihuahua@demo.org", phone: "6140000002", status: "active", roles: ["state_coordination"], territoryId: "chh" },
+  { id: "u_municipal", organizationId: organization.id, name: "Coordinacion Juarez", email: "juarez@demo.org", phone: "6560000000", status: "active", roles: ["municipal_coordination"], territoryId: "cdj" },
+  { id: "u_defensor", organizationId: organization.id, name: "Defensora de Casos", email: "casos@demo.org", phone: "6140000003", status: "active", roles: ["case_manager"], territoryId: "chh" },
+  { id: "u_eventos", organizationId: organization.id, name: "Equipo de Eventos", email: "eventos@demo.org", phone: "6140000004", status: "active", roles: ["events_team"], territoryId: "chh" },
+  { id: "u_auditor", organizationId: organization.id, name: "Auditoria Interna", email: "auditoria@demo.org", phone: "6140000005", status: "active", roles: ["auditor"], territoryId: "mx" },
+  { id: "u_del_1", organizationId: organization.id, name: "Delegada Norte", email: "delegada.norte@demo.org", phone: "6560000001", status: "active", roles: ["territorial_delegate"], territoryId: "cdj" },
+  { id: "u_del_2", organizationId: organization.id, name: "Delegado Centro", email: "delegado.centro@demo.org", phone: "6140000006", status: "active", roles: ["territorial_delegate"], territoryId: "chc" },
+  { id: "u_del_3", organizationId: organization.id, name: "Delegada Estatal", email: "delegada.estatal@demo.org", phone: "6140000007", status: "active", roles: ["territorial_delegate"], territoryId: "chh" },
+  { id: "u_com_1", organizationId: organization.id, name: "Comisionada Campo A", email: "comisionada.a@demo.org", phone: "6560000002", status: "active", roles: ["field_commissioner"], territoryId: "cdj" },
+  { id: "u_com_2", organizationId: organization.id, name: "Comisionado Campo B", email: "comisionado.b@demo.org", phone: "6140000008", status: "active", roles: ["field_commissioner"], territoryId: "chc" },
+  { id: "u_com_3", organizationId: organization.id, name: "Comisionada Campo C", email: "comisionada.c@demo.org", phone: "6140000009", status: "active", roles: ["field_commissioner"], territoryId: "chh" },
 ];
 
 const names = [

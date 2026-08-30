@@ -27,6 +27,7 @@ export type Territory = {
 
 export type User = {
   id: string;
+  organizationId: string;
   name: string;
   email: string;
   phone?: string;

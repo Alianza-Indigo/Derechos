@@ -2,7 +2,7 @@ import { cache } from "react";
 import { organization, reports } from "@/lib/mock-data";
 import type { HumanRightsCase, Member, User } from "@/lib/types";
 import type { MemberFilters } from "@/lib/validators";
-import { eq, desc, inArray } from "drizzle-orm";
+import { and, eq, desc, inArray } from "drizzle-orm";
 import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
 import * as schema from "@/drizzle/schema";
@@ -115,6 +115,7 @@ export async function listMembers(filters?: string | MemberFilters) {
     .select({ member: schema.members, credential: schema.memberCredentials })
     .from(schema.members)
     .leftJoin(schema.memberCredentials, eq(schema.memberCredentials.memberId, schema.members.id))
+    .where(eq(schema.members.organizationId, user.organizationId))
     .orderBy(desc(schema.members.joinedAt));
   const domain = rows
     .map(({ member, credential }) => dbMemberToDomain(member, credential))
@@ -134,7 +135,7 @@ export async function getMemberById(id: string) {
     .select({ member: schema.members, credential: schema.memberCredentials })
     .from(schema.members)
     .leftJoin(schema.memberCredentials, eq(schema.memberCredentials.memberId, schema.members.id))
-    .where(eq(schema.members.id, id))
+    .where(and(eq(schema.members.id, id), eq(schema.members.organizationId, user.organizationId)))
     .limit(1);
   if (!row) {
     return undefined;
@@ -155,7 +156,7 @@ export async function getMemberSelf() {
     .select({ member: schema.members, credential: schema.memberCredentials })
     .from(schema.members)
     .leftJoin(schema.memberCredentials, eq(schema.memberCredentials.memberId, schema.members.id))
-    .where(eq(schema.members.userId, user.id))
+    .where(and(eq(schema.members.userId, user.id), eq(schema.members.organizationId, user.organizationId)))
     .limit(1);
   return row ? dbMemberToDomain(row.member, row.credential) : undefined;
 }
@@ -164,7 +165,7 @@ export async function getMemberSelf() {
 export async function getMyReports() {
   const db = getDb();
   const user = await getCurrentUser();
-  const rows = await db.select().from(schema.cases).where(eq(schema.cases.openedBy, user.id)).orderBy(desc(schema.cases.openedAt));
+  const rows = await db.select().from(schema.cases).where(and(eq(schema.cases.openedBy, user.id), eq(schema.cases.organizationId, user.organizationId))).orderBy(desc(schema.cases.openedAt));
   return rows.map((record) => dbCaseToDomain(record));
 }
 
@@ -196,7 +197,7 @@ export async function listCases(filters?: string | CaseFilters) {
   const db = getDb();
   const user = await getCurrentUser();
   const sensitive = canViewSensitive(user);
-  const rows = await db.select().from(schema.cases).orderBy(desc(schema.cases.openedAt));
+  const rows = await db.select().from(schema.cases).where(eq(schema.cases.organizationId, user.organizationId)).orderBy(desc(schema.cases.openedAt));
   const domain = rows
     .map((record) => dbCaseToDomain(record))
     .filter((record) => canAccessCase(user, record))
@@ -214,7 +215,7 @@ export async function listCases(filters?: string | CaseFilters) {
 export async function getCaseById(id: string) {
   const db = getDb();
   const user = await getCurrentUser();
-  const [record] = await db.select().from(schema.cases).where(eq(schema.cases.id, id)).limit(1);
+  const [record] = await db.select().from(schema.cases).where(and(eq(schema.cases.id, id), eq(schema.cases.organizationId, user.organizationId))).limit(1);
   if (!record) {
     return undefined;
   }
@@ -234,7 +235,7 @@ export async function getCaseById(id: string) {
 export async function listEvents(query?: string) {
   const db = getDb();
   const user = await getCurrentUser();
-  const rows = await db.select().from(schema.events).orderBy(desc(schema.events.dateStart));
+  const rows = await db.select().from(schema.events).where(eq(schema.events.organizationId, user.organizationId)).orderBy(desc(schema.events.dateStart));
   const domain = rows.map((event) => dbEventToDomain(event)).filter((event) => canAccessTerritory(user, event.territoryId));
   return filterText(domain, query, (event) => [event.title, event.eventType, event.location, event.impactSummary]);
 }
@@ -242,7 +243,7 @@ export async function listEvents(query?: string) {
 export async function getEventById(id: string) {
   const db = getDb();
   const user = await getCurrentUser();
-  const [event] = await db.select().from(schema.events).where(eq(schema.events.id, id)).limit(1);
+  const [event] = await db.select().from(schema.events).where(and(eq(schema.events.id, id), eq(schema.events.organizationId, user.organizationId))).limit(1);
   if (!event) {
     return undefined;
   }
@@ -256,7 +257,8 @@ export async function getEventById(id: string) {
 
 export async function getTerritories() {
   const db = getDb();
-  const rows = await db.select().from(schema.territories);
+  const user = await getCurrentUser();
+  const rows = await db.select().from(schema.territories).where(eq(schema.territories.organizationId, user.organizationId));
   return rows.map((territory) => ({
     id: territory.id,
     type: territory.type,
@@ -272,7 +274,8 @@ export async function getTerritories() {
 
 export async function getUsers() {
   const db = getDb();
-  const rows = await db.select().from(schema.users);
+  const current = await getCurrentUser();
+  const rows = await db.select().from(schema.users).where(eq(schema.users.organizationId, current.organizationId));
   return rows.map((user) => dbUserToDomain(user, [], undefined));
 }
 
@@ -294,8 +297,8 @@ export async function getUsersWithRoles(): Promise<AdminUserRow[]> {
   }
   const db = getDb();
   const [userRows, roleAssignments, roleRows] = await Promise.all([
-    db.select().from(schema.users),
-    db.select().from(schema.userRoles),
+    db.select().from(schema.users).where(eq(schema.users.organizationId, user.organizationId)),
+    db.select().from(schema.userRoles).where(eq(schema.userRoles.organizationId, user.organizationId)),
     db.select().from(schema.roles),
   ]);
   const roleKeyById = new Map(roleRows.map((row) => [row.id, row.key]));
@@ -325,11 +328,12 @@ export async function getOperationsData(options?: { audit?: boolean }) {
   if (options?.audit && canReadLocation) {
     await writeAuditLog({ actorId: user.id, action: "geolocation.map_view", entityType: "delegate_location_ping", entityId: "map" });
   }
+  const org = user.organizationId;
   const [commissionRows, settingRows, pingRows, userRows] = await Promise.all([
-    db.select().from(schema.fieldCommissions).orderBy(desc(schema.fieldCommissions.scheduledAt)),
-    db.select().from(schema.locationTrackingSettings),
-    db.select().from(schema.delegateLocationPings).orderBy(desc(schema.delegateLocationPings.capturedAt)),
-    db.select().from(schema.users),
+    db.select().from(schema.fieldCommissions).where(eq(schema.fieldCommissions.organizationId, org)).orderBy(desc(schema.fieldCommissions.scheduledAt)),
+    db.select().from(schema.locationTrackingSettings).where(eq(schema.locationTrackingSettings.organizationId, org)),
+    db.select().from(schema.delegateLocationPings).where(eq(schema.delegateLocationPings.organizationId, org)).orderBy(desc(schema.delegateLocationPings.capturedAt)),
+    db.select().from(schema.users).where(eq(schema.users.organizationId, org)),
   ]);
   const pings = pingRows
     .map(dbPingToDomain)
@@ -375,7 +379,7 @@ export async function getOperationsData(options?: { audit?: boolean }) {
 export async function getCommissionById(id: string) {
   const db = getDb();
   const user = await getCurrentUser();
-  const [commission] = await db.select().from(schema.fieldCommissions).where(eq(schema.fieldCommissions.id, id)).limit(1);
+  const [commission] = await db.select().from(schema.fieldCommissions).where(and(eq(schema.fieldCommissions.id, id), eq(schema.fieldCommissions.organizationId, user.organizationId))).limit(1);
   if (!commission) {
     return undefined;
   }
@@ -404,11 +408,12 @@ export async function getAssistantData() {
   const db = getDb();
   const user = await getCurrentUser();
   const canOversee = hasAnyPermission(user, ["*", "read:national", "ai:admin"]);
+  const org = user.organizationId;
   const [providerRows, promptRows, allConversationRows, messageRows] = await Promise.all([
-    db.select().from(schema.aiProviderConfigs),
-    db.select().from(schema.aiPromptTemplates).orderBy(desc(schema.aiPromptTemplates.updatedAt)),
-    db.select().from(schema.aiConversations).orderBy(desc(schema.aiConversations.createdAt)),
-    db.select().from(schema.aiMessages).orderBy(desc(schema.aiMessages.createdAt)),
+    db.select().from(schema.aiProviderConfigs).where(eq(schema.aiProviderConfigs.organizationId, org)),
+    db.select().from(schema.aiPromptTemplates).where(eq(schema.aiPromptTemplates.organizationId, org)).orderBy(desc(schema.aiPromptTemplates.updatedAt)),
+    db.select().from(schema.aiConversations).where(eq(schema.aiConversations.organizationId, org)).orderBy(desc(schema.aiConversations.createdAt)),
+    db.select().from(schema.aiMessages).where(eq(schema.aiMessages.organizationId, org)).orderBy(desc(schema.aiMessages.createdAt)),
   ]);
   // El historial IA se limita al propio usuario salvo roles de supervision.
   const scopedByUser = canOversee ? allConversationRows : allConversationRows.filter((conversation) => conversation.userId === user.id);
@@ -453,17 +458,20 @@ export async function getAssistantData() {
 export async function getPromptById(id: string) {
   await warmReference();
   const db = getDb();
-  const [prompt] = await db.select().from(schema.aiPromptTemplates).where(eq(schema.aiPromptTemplates.id, id)).limit(1);
+  const user = await getCurrentUser();
+  const [prompt] = await db.select().from(schema.aiPromptTemplates).where(and(eq(schema.aiPromptTemplates.id, id), eq(schema.aiPromptTemplates.organizationId, user.organizationId))).limit(1);
   return prompt ? dbPromptToDomain(prompt) : undefined;
 }
 
 export async function getPrevalenceData() {
   const db = getDb();
+  const user = await getCurrentUser();
+  const org = user.organizationId;
   const [studyRows, metricRows, recordRows, territoryRows] = await Promise.all([
-    db.select().from(schema.prevalenceStudies),
-    db.select().from(schema.prevalenceMetrics),
-    db.select().from(schema.prevalenceRecords),
-    db.select().from(schema.territories),
+    db.select().from(schema.prevalenceStudies).where(eq(schema.prevalenceStudies.organizationId, org)),
+    db.select().from(schema.prevalenceMetrics).where(eq(schema.prevalenceMetrics.organizationId, org)),
+    db.select().from(schema.prevalenceRecords).where(eq(schema.prevalenceRecords.organizationId, org)),
+    db.select().from(schema.territories).where(eq(schema.territories.organizationId, org)),
   ]);
   const domainTerritories = territoryRows.map((territory) => ({
     id: territory.id,
@@ -523,7 +531,7 @@ export async function getAuditLogs() {
     return [];
   }
   const db = getDb();
-  const rows = await db.select().from(schema.auditLogs).orderBy(desc(schema.auditLogs.createdAt)).limit(200);
+  const rows = await db.select().from(schema.auditLogs).where(eq(schema.auditLogs.organizationId, user.organizationId)).orderBy(desc(schema.auditLogs.createdAt)).limit(200);
   return rows.map((log) => ({
     id: log.id,
     actorId: log.actorId ?? "system",
@@ -540,12 +548,14 @@ export async function getAuditLogs() {
 export async function getConfiguration() {
   await warmReference();
   const db = getDb();
+  const user = await getCurrentUser();
+  const org = user.organizationId;
   const [orgRows, providerRows, settingRows, territoryRows, territorySettingRows] = await Promise.all([
-    db.select().from(schema.organizations).limit(1),
-    db.select().from(schema.aiProviderConfigs).orderBy(schema.aiProviderConfigs.priority),
-    db.select().from(schema.locationTrackingSettings),
-    db.select().from(schema.territories),
-    db.select().from(schema.territoryLocationSettings),
+    db.select().from(schema.organizations).where(eq(schema.organizations.id, org)).limit(1),
+    db.select().from(schema.aiProviderConfigs).where(eq(schema.aiProviderConfigs.organizationId, org)).orderBy(schema.aiProviderConfigs.priority),
+    db.select().from(schema.locationTrackingSettings).where(eq(schema.locationTrackingSettings.organizationId, org)),
+    db.select().from(schema.territories).where(eq(schema.territories.organizationId, org)),
+    db.select().from(schema.territoryLocationSettings).where(eq(schema.territoryLocationSettings.organizationId, org)),
   ]);
   const territorySettings = territoryRows.map((territory) => {
     const setting = territorySettingRows.find((row) => row.territoryId === territory.id);
@@ -612,6 +622,7 @@ export function getTerritoryName(id?: string) {
 function dbUserToDomain(user: typeof schema.users.$inferSelect, roles: User["roles"], territoryId?: string): User {
   return {
     id: user.id,
+    organizationId: user.organizationId,
     name: user.name,
     email: user.email,
     phone: user.phone ?? undefined,

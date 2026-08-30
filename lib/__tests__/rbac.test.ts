@@ -11,6 +11,7 @@ import type { HumanRightsCase } from "@/lib/types";
 
 const make = (roles: User["roles"], territoryId?: string): User => ({
   id: "u",
+  organizationId: "org_demo",
   name: "Test",
   email: "t@demo.org",
   status: "active",
