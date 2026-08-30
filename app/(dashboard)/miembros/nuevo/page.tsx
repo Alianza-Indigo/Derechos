@@ -17,6 +17,7 @@ export default async function NewMemberPage() {
           { name: "gender", label: "Genero", type: "select", options: ["No especificado", "Femenino", "Masculino", "Otro"].map((value) => ({ value, label: value })) },
           { name: "phone", label: "Telefono", required: true },
           { name: "email", label: "Correo", type: "email", required: true },
+          { name: "position", label: "Puesto / cargo (opcional)" },
           { name: "territoryId", label: "Territorio", type: "select", options: territories.map((territory) => ({ value: territory.id, label: territory.name })) },
           { name: "status", label: "Estado", type: "select", options: ["pendiente", "activo", "suspendido", "baja", "fallecido"].map((value) => ({ value, label: value })) },
           { name: "address", label: "Domicilio o referencia", type: "textarea", required: true },

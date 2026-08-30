@@ -46,6 +46,7 @@ export type Member = {
   email: string;
   address: string;
   photoUrl?: string;
+  position?: string;
   territoryId: string;
   status: "pendiente" | "activo" | "suspendido" | "baja" | "fallecido";
   joinedAt: string;

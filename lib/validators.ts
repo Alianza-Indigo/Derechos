@@ -30,8 +30,14 @@ export const memberFormSchema = z.object({
   phone: z.string().min(7, "Captura telefono valido."),
   email: z.email("Captura correo valido."),
   address: z.string().min(5, "Captura domicilio o referencia."),
+  position: z.string().optional(),
   territoryId: z.string().min(1, "Selecciona territorio."),
   status: z.enum(["pendiente", "activo", "suspendido", "baja", "fallecido"]),
+});
+
+export const memberPositionSchema = z.object({
+  memberId: z.string().min(1),
+  position: z.string().max(120).optional(),
 });
 
 export const caseFormSchema = z.object({

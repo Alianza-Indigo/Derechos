@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { intensityStyle } from "@/lib/intensity";
-import { aiFeedbackSchema, caseReassignSchema, credentialActionSchema, locationPurgeSchema, memberAccessSchema, memberDeleteSchema, memberPhotoSchema, memberProfileSchema, memberReportSchema, memberStatusSchema, roleAssignmentSchema, userFormSchema } from "@/lib/validators";
+import { aiFeedbackSchema, caseReassignSchema, credentialActionSchema, locationPurgeSchema, memberAccessSchema, memberDeleteSchema, memberFormSchema, memberPhotoSchema, memberPositionSchema, memberProfileSchema, memberReportSchema, memberStatusSchema, roleAssignmentSchema, userFormSchema } from "@/lib/validators";
 
 describe("endurecimiento del review", () => {
   it("escala la intensidad del mapa por valor y maximo", () => {
@@ -79,5 +79,12 @@ describe("endurecimiento del review", () => {
     expect(memberDeleteSchema.safeParse({ memberId: "m1", confirm: "ELIMINAR" }).success).toBe(true);
     expect(memberDeleteSchema.safeParse({ memberId: "m1", confirm: "eliminar" }).success).toBe(false);
     expect(memberDeleteSchema.safeParse({ memberId: "m1" }).success).toBe(false);
+  });
+
+  it("acepta el puesto opcional del miembro", () => {
+    expect(memberPositionSchema.safeParse({ memberId: "m1", position: "Presidente" }).success).toBe(true);
+    expect(memberPositionSchema.safeParse({ memberId: "m1" }).success).toBe(true);
+    const withPosition = memberFormSchema.safeParse({ fullName: "Ana Lopez", birthDate: "1990-01-01", gender: "Femenino", phone: "6141112233", email: "a@b.mx", address: "Calle 1", position: "Vocal", territoryId: "t1", status: "activo" });
+    expect(withPosition.success).toBe(true);
   });
 });

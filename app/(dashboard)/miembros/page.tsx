@@ -36,11 +36,12 @@ export default async function MembersPage({ searchParams }: { searchParams: Prom
           </div>
         </form>
         {records.length ? (
-          <DataTable headers={["Numero", "Nombre", "Territorio", "Estado", "Ingreso", "Credencial"]}>
+          <DataTable headers={["Numero", "Nombre", "Puesto", "Territorio", "Estado", "Ingreso", "Credencial"]}>
             {records.map((member) => (
               <tr key={member.id}>
                 <td className="px-4 py-3 font-medium"><Link href={`/miembros/${member.id}`}>{member.memberNumber}</Link></td>
                 <td className="px-4 py-3">{member.fullName}</td>
+                <td className="px-4 py-3">{member.position ?? "—"}</td>
                 <td className="px-4 py-3">{getTerritoryName(member.territoryId)}</td>
                 <td className="px-4 py-3"><Badge tone={member.status === "activo" ? "green" : "amber"}>{member.status}</Badge></td>
                 <td className="px-4 py-3">{formatDate(member.joinedAt)}</td>

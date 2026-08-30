@@ -110,6 +110,7 @@ export const members = pgTable("members", {
   email: text("email").notNull(),
   address: text("address").notNull(),
   photoUrl: text("photo_url"),
+  position: text("position"),
   territoryId: uuid("territory_id").references(() => territories.id).notNull(),
   status: memberStatusEnum("status").default("pendiente").notNull(),
   joinedAt: timestamp("joined_at", { withTimezone: true }).defaultNow().notNull(),

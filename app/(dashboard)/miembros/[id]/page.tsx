@@ -4,7 +4,7 @@ import { Card, CardHeader } from "@/components/ui/card";
 import { DataTable } from "@/components/ui/table";
 import { CredentialManager } from "@/components/forms/credential-manager";
 import { MemberAccessForm } from "@/components/forms/member-access";
-import { DeleteMemberForm, MemberStatusForm } from "@/components/forms/member-lifecycle";
+import { DeleteMemberForm, MemberPositionForm, MemberStatusForm } from "@/components/forms/member-lifecycle";
 import { MemberPhotoUploader } from "@/components/portal/photo-uploader";
 import { credentialQrDataUrl, credentialUrl } from "@/lib/qr";
 import { formatDate } from "@/lib/utils";
@@ -71,12 +71,19 @@ export default async function MemberDetailPage({ params }: { params: Promise<{ i
           <tr><td className="px-4 py-3 font-medium">Nombre</td><td className="px-4 py-3">{member.fullName}</td></tr>
           <tr><td className="px-4 py-3 font-medium">Numero</td><td className="px-4 py-3">{member.memberNumber}</td></tr>
           <tr><td className="px-4 py-3 font-medium">Estado</td><td className="px-4 py-3"><Badge tone="green">{member.status}</Badge></td></tr>
+          <tr><td className="px-4 py-3 font-medium">Puesto / cargo</td><td className="px-4 py-3">{member.position ?? "Sin asignar"}</td></tr>
           <tr><td className="px-4 py-3 font-medium">Territorio</td><td className="px-4 py-3">{getTerritoryName(member.territoryId)}</td></tr>
           <tr><td className="px-4 py-3 font-medium">Telefono</td><td className="px-4 py-3">{member.phone}</td></tr>
           <tr><td className="px-4 py-3 font-medium">Correo</td><td className="px-4 py-3">{member.email}</td></tr>
           <tr><td className="px-4 py-3 font-medium">Domicilio</td><td className="px-4 py-3">{member.address}</td></tr>
           <tr><td className="px-4 py-3 font-medium">Ingreso</td><td className="px-4 py-3">{formatDate(member.joinedAt)}</td></tr>
         </DataTable>
+        {canManage ? (
+          <div className="mt-4 border-t border-slate-100 pt-4">
+            <p className="mb-2 text-sm font-medium text-slate-700">Puesto / cargo en la organizacion</p>
+            <MemberPositionForm memberId={member.id} position={member.position} />
+          </div>
+        ) : null}
         {canManage ? (
           <div className="mt-4 border-t border-slate-100 pt-4">
             <p className="mb-1 text-sm font-medium text-slate-700">Estado del miembro</p>

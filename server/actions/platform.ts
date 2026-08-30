@@ -27,6 +27,7 @@ import {
   memberDeleteSchema,
   memberFormSchema,
   memberPhotoSchema,
+  memberPositionSchema,
   memberProfileSchema,
   memberReportSchema,
   memberStatusSchema,
@@ -109,6 +110,7 @@ export async function createMemberAction(_: ActionResult | null, formData: FormD
     phone: parsed.data.phone,
     email: parsed.data.email,
     address: parsed.data.address,
+    position: parsed.data.position || null,
     territoryId: parsed.data.territoryId,
     status: parsed.data.status,
     joinedAt: new Date(),
@@ -123,6 +125,29 @@ export async function createMemberAction(_: ActionResult | null, formData: FormD
   await writeAuditLog({ actorId: user.id, action: "member.create", entityType: "member", entityId: id, after: { ...parsed.data, memberNumber } });
   await writeAuditLog({ actorId: user.id, action: "credential.issue", entityType: "member_credential", entityId: slug, after: { publicSlug: slug } });
   redirect(`/miembros/${id}`);
+}
+
+// Asigna o actualiza el puesto/cargo del miembro dentro de la organizacion.
+export async function updateMemberPositionAction(_: ActionResult | null, formData: FormData): Promise<ActionResult> {
+  const user = await getCurrentUser();
+  if (!can(user, ["write:territory", "*"])) {
+    return DENIED;
+  }
+  const parsed = memberPositionSchema.safeParse(Object.fromEntries(formData));
+  if (!parsed.success) {
+    return { ok: false, message: parsed.error.issues[0]?.message ?? "Datos invalidos." };
+  }
+  const member = await getMemberById(parsed.data.memberId);
+  if (!member) {
+    return { ok: false, message: "No tienes acceso a este miembro." };
+  }
+  const db = getDb();
+  const position = parsed.data.position?.trim() || null;
+  await db.update(schema.members).set({ position, updatedAt: new Date() }).where(eq(schema.members.id, parsed.data.memberId));
+  await writeAuditLog({ actorId: user.id, action: "member.position_update", entityType: "member", entityId: parsed.data.memberId, after: { position } });
+  revalidatePath(`/miembros/${parsed.data.memberId}`);
+  revalidatePath("/miembros");
+  return { ok: true, message: "Puesto actualizado." };
 }
 
 // Baja logica / reactivacion de un miembro. Al dar de baja se revoca la

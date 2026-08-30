@@ -33,6 +33,7 @@ export default async function CredentialPage({ params }: { params: Promise<{ slu
             <img src={`/api/member-photo/${member.id}`} alt={`Fotografia de ${member.fullName}`} className="mx-auto mt-4 size-28 rounded-full border border-slate-200 object-cover" />
           ) : null}
           <h1 className="mt-2 text-xl font-semibold text-slate-950">{member.fullName}</h1>
+          {member.position ? <p className="mt-1 text-sm font-medium text-teal-700">{member.position}</p> : null}
           <p className="mt-1 text-slate-600">{member.memberNumber}</p>
           <div className="mt-4"><Badge tone={member.credentialStatus === "activa" ? "green" : "amber"}>{member.credentialStatus}</Badge></div>
           <p className="mt-3 text-sm text-slate-600">{getTerritoryName(member.territoryId)}</p>
