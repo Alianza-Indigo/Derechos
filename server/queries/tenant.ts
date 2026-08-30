@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import * as schema from "@/drizzle/schema";
 import { getDb } from "@/server/db";
 import { hostname, subdomainFromHost } from "@/lib/tenant";
+import { normalizeLanding, type LandingContent } from "@/lib/landing";
 
 export type TenantBranding = {
   id: string;
@@ -67,4 +68,80 @@ export async function getOrganizationBranding(organizationId: string): Promise<T
   const db = getDb();
   const [row] = await db.select(brandingColumns).from(schema.organizations).where(eq(schema.organizations.id, organizationId)).limit(1);
   return row ? toBranding(row) : null;
+}
+
+export type PublicSite = {
+  id: string;
+  name: string;
+  legalName: string | null;
+  logoUrl: string | null;
+  primaryColor: string;
+  slug: string;
+  code: string;
+  country: string;
+  landing: LandingContent;
+};
+
+const siteColumns = {
+  id: schema.organizations.id,
+  name: schema.organizations.name,
+  legalName: schema.organizations.legalName,
+  logoUrl: schema.organizations.logoUrl,
+  primaryColor: schema.organizations.primaryColor,
+  slug: schema.organizations.slug,
+  code: schema.organizations.code,
+  country: schema.organizations.country,
+  status: schema.organizations.status,
+  landing: schema.organizations.landing,
+};
+
+function toSite(row: {
+  id: string;
+  name: string;
+  legalName: string | null;
+  logoUrl: string | null;
+  primaryColor: string;
+  slug: string;
+  code: string;
+  country: string;
+  landing: LandingContent | null;
+}): PublicSite {
+  return {
+    id: row.id,
+    name: row.name,
+    legalName: row.legalName,
+    logoUrl: row.logoUrl,
+    primaryColor: row.primaryColor,
+    slug: row.slug,
+    code: row.code,
+    country: row.country,
+    landing: normalizeLanding(row.landing),
+  };
+}
+
+// Sitio publico (landing) del inquilino resuelto por el host. Solo inquilinos
+// activos. Devuelve null si el host no corresponde a ningun inquilino (p. ej.
+// el dominio comun de la plataforma).
+export async function getPublicSiteFromHeaders(): Promise<PublicSite | null> {
+  const headerList = await headers();
+  const host = headerList.get("host");
+  const name = hostname(host);
+  if (!name) {
+    return null;
+  }
+  const db = getDb();
+
+  const [byDomain] = await db.select(siteColumns).from(schema.organizations).where(eq(schema.organizations.customDomain, name)).limit(1);
+  if (byDomain && byDomain.status === "active") {
+    return toSite(byDomain);
+  }
+
+  const slug = subdomainFromHost(host);
+  if (slug) {
+    const [bySlug] = await db.select(siteColumns).from(schema.organizations).where(eq(schema.organizations.slug, slug)).limit(1);
+    if (bySlug && bySlug.status === "active") {
+      return toSite(bySlug);
+    }
+  }
+  return null;
 }

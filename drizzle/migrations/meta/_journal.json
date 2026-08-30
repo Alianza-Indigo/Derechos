@@ -71,6 +71,13 @@
       "when": 1788094631200,
       "tag": "0009_modern_sharon_ventura",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1788098743023,
+      "tag": "0010_jazzy_flatman",
+      "breakpoints": true
     }
   ]
 }

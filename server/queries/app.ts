@@ -1,5 +1,6 @@
 import { cache } from "react";
 import { organization, reports } from "@/lib/mock-data";
+import { emptyLanding, normalizeLanding } from "@/lib/landing";
 import type { HumanRightsCase, Member, User } from "@/lib/types";
 import type { MemberFilters } from "@/lib/validators";
 import { and, eq, desc, inArray } from "drizzle-orm";
@@ -590,8 +591,11 @@ export async function getConfiguration() {
         geolocationEnabled: orgRows[0].geolocationEnabled,
         aiEnabled: orgRows[0].aiEnabled,
         plan: orgRows[0].plan,
+        slug: orgRows[0].slug,
+        customDomain: orgRows[0].customDomain,
+        landing: normalizeLanding(orgRows[0].landing),
       }
-      : { ...organization, plan: "institucional" },
+      : { ...organization, plan: "institucional", slug: "demo", customDomain: null, landing: emptyLanding },
     aiProviderConfigs: providerRows.map(dbProviderToDomain),
     locationSettings: settingRows.map((setting) => ({
       id: setting.id,

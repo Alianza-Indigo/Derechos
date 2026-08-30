@@ -199,6 +199,24 @@ export const organizationSignupSchema = z.object({
   adminPassword: z.string().min(8, "La contrasena debe tener al menos 8 caracteres."),
 });
 
+// Edicion de la landing page publica del inquilino. Campos de texto libres;
+// las URLs se validan con laxitud (opcionales).
+const optionalUrl = z.string().trim().url("URL invalida.").optional().or(z.literal(""));
+export const landingSchema = z.object({
+  published: formBoolean,
+  tagline: z.string().max(160).optional(),
+  about: z.string().max(2000).optional(),
+  mission: z.string().max(2000).optional(),
+  heroImageUrl: optionalUrl,
+  contactEmail: z.string().trim().email("Correo de contacto invalido.").optional().or(z.literal("")),
+  contactPhone: z.string().max(40).optional(),
+  address: z.string().max(200).optional(),
+  website: optionalUrl,
+  facebook: optionalUrl,
+  instagram: optionalUrl,
+  twitter: optionalUrl,
+});
+
 export const locationSettingSchema = z.object({
   id: z.string().min(1),
   enabled: formBoolean,

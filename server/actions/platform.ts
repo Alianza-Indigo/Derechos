@@ -41,9 +41,11 @@ import {
   territoryLocationSchema,
   providerConfigSchema,
   promptTemplateSchema,
+  landingSchema,
   userFormSchema,
   userStatusSchema,
 } from "@/lib/validators";
+import type { LandingContent } from "@/lib/landing";
 import { writeAuditLog } from "@/server/audit/log";
 import { getDb } from "@/server/db";
 import { canAccessTerritory, hasAnyPermission } from "@/server/permissions/rbac";
@@ -970,6 +972,44 @@ export async function updateOrganizationAction(_: ActionResult | null, formData:
   await writeAuditLog({ actorId: user.id, action: "organization.update", entityType: "organization", entityId: user.organizationId, after: values });
   revalidatePath("/configuracion");
   return { ok: true, message: "Configuracion institucional actualizada." };
+}
+
+// Edita la landing page publica del inquilino (el sitio que ven en su
+// subdominio/dominio). La administra el propio inquilino (write:config).
+export async function updateLandingAction(_: ActionResult | null, formData: FormData): Promise<ActionResult> {
+  const user = await getCurrentUser();
+  if (!can(user, ["write:config"])) {
+    return DENIED;
+  }
+  const parsed = landingSchema.safeParse(Object.fromEntries(formData));
+  if (!parsed.success) {
+    return { ok: false, message: parsed.error.issues[0]?.message ?? "Datos invalidos." };
+  }
+  const d = parsed.data;
+  const clean = (value?: string) => {
+    const trimmed = value?.trim();
+    return trimmed ? trimmed : undefined;
+  };
+  const landing: LandingContent = {
+    published: d.published,
+    tagline: clean(d.tagline),
+    about: clean(d.about),
+    mission: clean(d.mission),
+    heroImageUrl: clean(d.heroImageUrl),
+    contactEmail: clean(d.contactEmail),
+    contactPhone: clean(d.contactPhone),
+    address: clean(d.address),
+    website: clean(d.website),
+    facebook: clean(d.facebook),
+    instagram: clean(d.instagram),
+    twitter: clean(d.twitter),
+  };
+  const db = getDb();
+  await db.update(schema.organizations).set({ landing, updatedAt: new Date() }).where(eq(schema.organizations.id, user.organizationId));
+  await writeAuditLog({ actorId: user.id, action: "organization.landing_update", entityType: "organization", entityId: user.organizationId, after: { published: landing.published } });
+  revalidatePath("/configuracion");
+  revalidatePath("/");
+  return { ok: true, message: landing.published ? "Landing publicada." : "Landing guardada (sin publicar)." };
 }
 
 export async function updateLocationSettingAction(_: ActionResult | null, formData: FormData): Promise<ActionResult> {

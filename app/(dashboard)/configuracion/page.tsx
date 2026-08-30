@@ -3,6 +3,7 @@ import { LinkButton } from "@/components/ui/button";
 import { DataTable } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { LocationPurgeForm, LocationSettingsEditor, OrganizationForm, TerritoryLocationEditor } from "@/components/config/config-forms";
+import { LandingForm } from "@/components/config/landing-form";
 import { getConfiguration, getCurrentUser, getTerritories, getUserName, getUsers } from "@/server/queries/app";
 import { hasAnyPermission } from "@/server/permissions/rbac";
 import { planLabel, planLimits } from "@/lib/plans";
@@ -18,6 +19,13 @@ export default async function ConfigurationPage() {
   const plan = data.organization.plan ?? "institucional";
   const limits = planLimits(plan);
   const fmt = (value: number | null) => (value == null ? "sin limite" : String(value));
+  const rootDomain = process.env.ROOT_DOMAIN?.trim().toLowerCase();
+  const org = data.organization as typeof data.organization & { slug?: string; customDomain?: string | null; landing?: import("@/lib/landing").LandingContent };
+  const publicUrl = org.customDomain
+    ? `https://${org.customDomain}`
+    : rootDomain && org.slug
+      ? `https://${org.slug}.${rootDomain}`
+      : undefined;
 
   return (
     <div className="space-y-6">
@@ -30,6 +38,12 @@ export default async function ConfigurationPage() {
           <span className="text-sm text-slate-600">Casos: {fmt(limits.maxCases)}</span>
         </div>
       </Card>
+      {canConfig ? (
+        <Card>
+          <CardHeader title="Sitio publico (landing)" description="La pagina publica de tu organizacion, visible en tu subdominio o dominio propio. Publicala cuando este lista." />
+          <LandingForm landing={org.landing ?? { published: false }} publicUrl={publicUrl} />
+        </Card>
+      ) : null}
       {canConfig ? (
         <Card>
           <CardHeader

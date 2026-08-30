@@ -13,6 +13,7 @@ import {
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
+import type { LandingContent } from "@/lib/landing";
 
 const id = (name = "id") => uuid(name).defaultRandom().primaryKey();
 const createdAt = timestamp("created_at", { withTimezone: true }).defaultNow().notNull();
@@ -62,6 +63,8 @@ export const organizations = pgTable("organizations", {
   plan: text("plan").default("gratuito").notNull(),
   // Dominio propio del inquilino (ademas del subdominio por slug). Unico.
   customDomain: text("custom_domain"),
+  // Contenido de la landing page publica del inquilino (editable por el).
+  landing: jsonb("landing").$type<LandingContent>(),
   createdAt,
   updatedAt,
 }, (table) => ({
