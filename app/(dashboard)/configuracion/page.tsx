@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { LocationPurgeForm, LocationSettingsEditor, OrganizationForm, TerritoryLocationEditor } from "@/components/config/config-forms";
 import { getConfiguration, getCurrentUser, getTerritories, getUserName, getUsers } from "@/server/queries/app";
 import { hasAnyPermission } from "@/server/permissions/rbac";
+import { planLabel, planLimits } from "@/lib/plans";
 
 export default async function ConfigurationPage() {
   const data = await getConfiguration();
@@ -14,9 +15,21 @@ export default async function ConfigurationPage() {
   const users = await getUsers();
   const territories = await getTerritories();
   const labels = Object.fromEntries(users.map((item) => [item.id, item.name]));
+  const plan = data.organization.plan ?? "institucional";
+  const limits = planLimits(plan);
+  const fmt = (value: number | null) => (value == null ? "sin limite" : String(value));
 
   return (
     <div className="space-y-6">
+      <Card>
+        <CardHeader title="Plan" description="Plan comercial vigente y cupos de tu organizacion. Para cambiarlo contacta a la administracion de la plataforma." />
+        <div className="flex flex-wrap items-center gap-3 px-4 pb-4">
+          <Badge tone="green">Plan {planLabel(plan)}</Badge>
+          <span className="text-sm text-slate-600">Usuarios: {fmt(limits.maxUsers)}</span>
+          <span className="text-sm text-slate-600">Miembros: {fmt(limits.maxMembers)}</span>
+          <span className="text-sm text-slate-600">Casos: {fmt(limits.maxCases)}</span>
+        </div>
+      </Card>
       {canConfig ? (
         <Card>
           <CardHeader

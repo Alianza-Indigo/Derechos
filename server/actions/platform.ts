@@ -7,6 +7,7 @@ import { and, eq, lt, sql, type SQL } from "drizzle-orm";
 import * as schema from "@/drizzle/schema";
 import { runAssistant } from "@/lib/ai/adapters";
 import { normalizeSearch } from "@/lib/utils";
+import { planCapacityError } from "@/server/permissions/plan";
 import {
   aiFeedbackSchema,
   aiRunSchema,
@@ -86,6 +87,10 @@ export async function createMemberAction(_: ActionResult | null, formData: FormD
 
   const db = getDb();
   const org = user.organizationId;
+  const overCapacity = await planCapacityError(org, "members");
+  if (overCapacity) {
+    return { ok: false, message: overCapacity };
+  }
   const duplicate = await db
     .select({ id: schema.members.id })
     .from(schema.members)
@@ -245,6 +250,10 @@ export async function createCaseAction(_: ActionResult | null, formData: FormDat
 
   const db = getDb();
   const org = user.organizationId;
+  const overCapacity = await planCapacityError(org, "cases");
+  if (overCapacity) {
+    return { ok: false, message: overCapacity };
+  }
   const [{ total }] = await db.select({ total: sql<number>`count(*)::int` }).from(schema.cases).where(eq(schema.cases.organizationId, org));
   const id = crypto.randomUUID();
   const caseNumber = `${await orgCode(db, org)}-CASO-${new Date().getFullYear()}-${String(total + 1).padStart(4, "0")}`;
@@ -1217,6 +1226,10 @@ export async function createUserAction(_: ActionResult | null, formData: FormDat
   const email = parsed.data.email.toLowerCase();
   const db = getDb();
   const org = user.organizationId;
+  const overCapacity = await planCapacityError(org, "users");
+  if (overCapacity) {
+    return { ok: false, message: overCapacity };
+  }
   const existing = await db.select({ id: schema.users.id }).from(schema.users).where(and(eq(schema.users.organizationId, org), eq(schema.users.email, email))).limit(1);
   if (existing.length) {
     return { ok: false, message: "Ya existe un usuario con ese correo." };
@@ -1350,6 +1363,10 @@ export async function createMemberReportAction(_: ActionResult | null, formData:
   }
   const db = getDb();
   const org = user.organizationId;
+  const overCapacity = await planCapacityError(org, "cases");
+  if (overCapacity) {
+    return { ok: false, message: overCapacity };
+  }
   const [{ total }] = await db.select({ total: sql<number>`count(*)::int` }).from(schema.cases).where(eq(schema.cases.organizationId, org));
   const id = crypto.randomUUID();
   const caseNumber = `${await orgCode(db, org)}-CASO-${new Date().getFullYear()}-${String(total + 1).padStart(4, "0")}`;

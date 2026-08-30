@@ -61,6 +61,7 @@ async function main() {
     slug: "demo",
     code: "DEMO",
     status: "active",
+    plan: "institucional",
     geolocationEnabled: organization.geolocationEnabled,
     aiEnabled: organization.aiEnabled,
   }).onConflictDoNothing();

@@ -1,26 +1,37 @@
 import Link from "next/link";
 import { Building2 } from "lucide-react";
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import { navigationItems, APP_NAME } from "@/lib/constants";
 import { LogoutButton } from "@/components/layout/logout-button";
 import { cn, initials } from "@/lib/utils";
 import { getCurrentUser } from "@/server/queries/app";
+import { getOrganizationBranding } from "@/server/queries/tenant";
 import { isPlatformOwner } from "@/server/permissions/platform";
 
 export async function AppShell({ children }: { children: ReactNode }) {
   const user = await getCurrentUser();
+  const branding = await getOrganizationBranding(user.organizationId);
+  const orgName = branding?.name || APP_NAME;
+  // El color de marca del inquilino se expone como variable CSS --brand para
+  // que el boton primario y el chrome de identidad la adopten.
+  const brandStyle = { "--brand": branding?.primaryColor || "#0f766e" } as CSSProperties;
   // La consola de plataforma solo se muestra a la duena de la plataforma.
   const items = isPlatformOwner(user)
     ? [{ href: "/plataforma", label: "Plataforma", icon: Building2 }, ...navigationItems]
     : navigationItems;
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div className="min-h-screen bg-slate-50" style={brandStyle}>
       <aside className="fixed inset-y-0 left-0 z-20 hidden w-72 border-r border-slate-200 bg-white lg:block">
         <div className="flex h-16 items-center gap-3 border-b border-slate-200 px-5">
-          <div className="flex size-10 items-center justify-center rounded-lg bg-teal-700 text-sm font-bold text-white">DH</div>
+          {branding?.logoUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={branding.logoUrl} alt={orgName} className="size-10 rounded-lg object-cover" />
+          ) : (
+            <div className="flex size-10 items-center justify-center rounded-lg bg-[var(--brand,#0f766e)] text-sm font-bold text-white">{initials(orgName)}</div>
+          )}
           <div>
-            <p className="text-sm font-semibold text-slate-950">{APP_NAME}</p>
+            <p className="text-sm font-semibold text-slate-950">{orgName}</p>
             <p className="text-xs text-slate-500">Operacion institucional</p>
           </div>
         </div>

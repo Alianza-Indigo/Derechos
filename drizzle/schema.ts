@@ -56,12 +56,18 @@ export const organizations = pgTable("organizations", {
   country: text("country").default("Mexico").notNull(),
   geolocationEnabled: boolean("geolocation_enabled").default(true).notNull(),
   aiEnabled: boolean("ai_enabled").default(true).notNull(),
+  // Estado del inquilino: active | suspended | pending (auto-registro por aprobar).
   status: text("status").default("active").notNull(),
+  // Plan comercial (define cupos): gratuito | pro | institucional.
+  plan: text("plan").default("gratuito").notNull(),
+  // Dominio propio del inquilino (ademas del subdominio por slug). Unico.
+  customDomain: text("custom_domain"),
   createdAt,
   updatedAt,
 }, (table) => ({
   slugIdx: uniqueIndex("organizations_slug_idx").on(table.slug),
   codeIdx: uniqueIndex("organizations_code_idx").on(table.code),
+  customDomainIdx: uniqueIndex("organizations_custom_domain_idx").on(table.customDomain),
 }));
 
 // Referencia a la organizacion (tenant) presente en toda tabla de datos.

@@ -589,8 +589,9 @@ export async function getConfiguration() {
         country: orgRows[0].country,
         geolocationEnabled: orgRows[0].geolocationEnabled,
         aiEnabled: orgRows[0].aiEnabled,
+        plan: orgRows[0].plan,
       }
-      : organization,
+      : { ...organization, plan: "institucional" },
     aiProviderConfigs: providerRows.map(dbProviderToDomain),
     locationSettings: settingRows.map((setting) => ({
       id: setting.id,

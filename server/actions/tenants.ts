@@ -4,11 +4,19 @@ import { revalidatePath } from "next/cache";
 import { hash } from "bcryptjs";
 import { eq } from "drizzle-orm";
 import * as schema from "@/drizzle/schema";
-import { organizationCreateSchema, organizationStatusSchema } from "@/lib/validators";
+import {
+  organizationCreateSchema,
+  organizationDomainSchema,
+  organizationPlanSchema,
+  organizationSignupSchema,
+  organizationStatusSchema,
+} from "@/lib/validators";
 import { getDb } from "@/server/db";
 import { getCurrentUser } from "@/server/queries/app";
 import { isPlatformOwner } from "@/server/permissions/platform";
 import { writeAuditLog } from "@/server/audit/log";
+import { rateLimit } from "@/lib/rate-limit";
+import { headers } from "next/headers";
 
 type ActionResult = { ok: boolean; message: string };
 
@@ -59,6 +67,7 @@ export async function createOrganizationAction(_: ActionResult | null, formData:
     code,
     country: data.country,
     primaryColor: data.primaryColor || "#0f766e",
+    plan: data.plan || "institucional",
     status: "active",
   });
 
@@ -128,5 +137,137 @@ export async function setOrganizationStatusAction(_: ActionResult | null, formDa
     after: { status: parsed.data.status },
   });
   revalidatePath("/plataforma");
-  return { ok: true, message: parsed.data.status === "suspended" ? "Organizacion suspendida." : "Organizacion reactivada." };
+  return { ok: true, message: parsed.data.status === "suspended" ? "Organizacion suspendida." : "Organizacion activada." };
+}
+
+// Cambia el plan comercial de una organizacion (define sus cupos). Solo la
+// duena de la plataforma.
+export async function setOrganizationPlanAction(_: ActionResult | null, formData: FormData): Promise<ActionResult> {
+  const actor = await getCurrentUser();
+  if (!isPlatformOwner(actor)) {
+    return DENIED;
+  }
+  const parsed = organizationPlanSchema.safeParse(Object.fromEntries(formData));
+  if (!parsed.success) {
+    return { ok: false, message: parsed.error.issues[0]?.message ?? "Datos invalidos." };
+  }
+  const db = getDb();
+  const [org] = await db.select({ plan: schema.organizations.plan }).from(schema.organizations).where(eq(schema.organizations.id, parsed.data.organizationId)).limit(1);
+  if (!org) {
+    return { ok: false, message: "La organizacion no existe." };
+  }
+  await db.update(schema.organizations).set({ plan: parsed.data.plan, updatedAt: new Date() }).where(eq(schema.organizations.id, parsed.data.organizationId));
+  await writeAuditLog({
+    actorId: actor.id,
+    organizationId: parsed.data.organizationId,
+    action: "organization.plan_change",
+    entityType: "organization",
+    entityId: parsed.data.organizationId,
+    before: { plan: org.plan },
+    after: { plan: parsed.data.plan },
+  });
+  revalidatePath("/plataforma");
+  return { ok: true, message: "Plan actualizado." };
+}
+
+// Define o limpia el dominio propio de una organizacion. Solo la duena de la
+// plataforma. El dominio es unico en toda la plataforma.
+export async function setOrganizationDomainAction(_: ActionResult | null, formData: FormData): Promise<ActionResult> {
+  const actor = await getCurrentUser();
+  if (!isPlatformOwner(actor)) {
+    return DENIED;
+  }
+  const parsed = organizationDomainSchema.safeParse(Object.fromEntries(formData));
+  if (!parsed.success) {
+    return { ok: false, message: parsed.error.issues[0]?.message ?? "Datos invalidos." };
+  }
+  const domain = parsed.data.customDomain?.trim().toLowerCase() || null;
+  const db = getDb();
+  if (domain) {
+    const clash = await db
+      .select({ id: schema.organizations.id })
+      .from(schema.organizations)
+      .where(eq(schema.organizations.customDomain, domain))
+      .limit(1);
+    if (clash.length && clash[0].id !== parsed.data.organizationId) {
+      return { ok: false, message: "Ese dominio ya esta asignado a otra organizacion." };
+    }
+  }
+  await db.update(schema.organizations).set({ customDomain: domain, updatedAt: new Date() }).where(eq(schema.organizations.id, parsed.data.organizationId));
+  await writeAuditLog({
+    actorId: actor.id,
+    organizationId: parsed.data.organizationId,
+    action: "organization.domain_set",
+    entityType: "organization",
+    entityId: parsed.data.organizationId,
+    after: { customDomain: domain },
+  });
+  revalidatePath("/plataforma");
+  return { ok: true, message: domain ? "Dominio propio configurado. Apunta el DNS y agregalo en tu hosting." : "Dominio propio removido." };
+}
+
+// Auto-registro publico de una organizacion. Crea la organizacion en estado
+// "pending" (pendiente de aprobacion) y su primer administrador. No requiere
+// sesion; limitado por IP. Hasta que la plataforma la apruebe, sus usuarios no
+// pueden iniciar sesion (el gate de organizacion inactiva los bloquea).
+export async function registerOrganizationAction(_: ActionResult | null, formData: FormData): Promise<ActionResult> {
+  const headerList = await headers();
+  const ip = headerList.get("x-forwarded-for")?.split(",")[0]?.trim() || "local";
+  const limit = await rateLimit(`signup:${ip}`, 5, 3600);
+  if (!limit.allowed) {
+    return { ok: false, message: "Demasiados registros desde esta red. Intenta mas tarde." };
+  }
+  const parsed = organizationSignupSchema.safeParse(Object.fromEntries(formData));
+  if (!parsed.success) {
+    return { ok: false, message: parsed.error.issues[0]?.message ?? "Datos invalidos." };
+  }
+  const data = parsed.data;
+  const db = getDb();
+
+  const slugClash = await db.select({ id: schema.organizations.id }).from(schema.organizations).where(eq(schema.organizations.slug, data.slug)).limit(1);
+  if (slugClash.length) {
+    return { ok: false, message: "Ya existe una organizacion con ese identificador (slug). Elige otro." };
+  }
+  const codeClash = await db.select({ id: schema.organizations.id }).from(schema.organizations).where(eq(schema.organizations.code, data.code)).limit(1);
+  if (codeClash.length) {
+    return { ok: false, message: "Ya existe una organizacion con ese codigo. Elige otro." };
+  }
+
+  const orgId = crypto.randomUUID();
+  await db.insert(schema.organizations).values({
+    id: orgId,
+    name: data.name,
+    legalName: data.legalName || null,
+    slug: data.slug,
+    code: data.code,
+    country: data.country,
+    plan: "gratuito",
+    status: "pending",
+  });
+
+  const userId = crypto.randomUUID();
+  const passwordHash = await hash(data.adminPassword, 12);
+  await db.insert(schema.users).values({
+    id: userId,
+    organizationId: orgId,
+    name: data.adminName,
+    email: data.adminEmail.toLowerCase().trim(),
+    passwordHash,
+    providerId: null,
+    status: "active",
+  });
+  const [superRole] = await db.select({ id: schema.roles.id }).from(schema.roles).where(eq(schema.roles.key, "super_admin")).limit(1);
+  if (superRole) {
+    await db.insert(schema.userRoles).values({ organizationId: orgId, userId, roleId: superRole.id, scopeType: "global", scopeId: null });
+  }
+
+  await writeAuditLog({
+    organizationId: orgId,
+    action: "organization.signup",
+    entityType: "organization",
+    entityId: orgId,
+    after: { name: data.name, slug: data.slug, code: data.code },
+    ip: ip === "local" ? undefined : ip,
+  });
+  return { ok: true, message: "Registro recibido. Tu organizacion quedara activa cuando la plataforma la apruebe; te avisaremos." };
 }

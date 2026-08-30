@@ -13,6 +13,8 @@ export type OrganizationRow = {
   code: string;
   country: string;
   status: string;
+  plan: string;
+  customDomain: string | null;
   createdAt: string;
   counts: { users: number; members: number; cases: number };
 };
@@ -61,6 +63,8 @@ export async function listOrganizations(): Promise<OrganizationRow[]> {
     code: org.code,
     country: org.country,
     status: org.status,
+    plan: org.plan,
+    customDomain: org.customDomain,
     createdAt: org.createdAt.toISOString(),
     counts: {
       users: usersByOrg.get(org.id) ?? 0,

@@ -147,6 +147,7 @@ export const organizationCreateSchema = z.object({
     .max(8, "El codigo debe tener maximo 8 caracteres.")
     .regex(/^[A-Z0-9]+$/, "El codigo solo admite mayusculas y numeros."),
   primaryColor: z.string().regex(/^#[0-9a-fA-F]{6}$/, "Usa un color hexadecimal (#RRGGBB).").optional(),
+  plan: z.enum(["gratuito", "pro", "institucional"]).optional(),
   adminName: z.string().min(2, "Captura el nombre del administrador."),
   adminEmail: z.string().email("Correo del administrador invalido."),
   adminPassword: z.string().min(8, "La contrasena del administrador debe tener al menos 8 caracteres."),
@@ -155,6 +156,47 @@ export const organizationCreateSchema = z.object({
 export const organizationStatusSchema = z.object({
   organizationId: z.string().min(1),
   status: z.enum(["active", "suspended"]),
+});
+
+export const organizationPlanSchema = z.object({
+  organizationId: z.string().min(1),
+  plan: z.enum(["gratuito", "pro", "institucional"]),
+});
+
+export const organizationDomainSchema = z.object({
+  organizationId: z.string().min(1),
+  customDomain: z
+    .string()
+    .trim()
+    .toLowerCase()
+    .regex(/^([a-z0-9-]+\.)+[a-z]{2,}$/, "Dominio invalido (ej. derechos.miorg.org).")
+    .optional()
+    .or(z.literal("")),
+});
+
+// Auto-registro publico de una organizacion. No incluye plan (siempre inicia en
+// el plan gratuito) ni estado (inicia pendiente de aprobacion).
+export const organizationSignupSchema = z.object({
+  name: z.string().min(2, "Captura el nombre de la organizacion."),
+  legalName: z.string().optional(),
+  country: z.string().min(2, "Captura el pais base."),
+  slug: z
+    .string()
+    .trim()
+    .toLowerCase()
+    .min(2, "El identificador (slug) debe tener al menos 2 caracteres.")
+    .max(40, "El identificador (slug) es demasiado largo.")
+    .regex(/^[a-z0-9-]+$/, "El slug solo admite minusculas, numeros y guiones."),
+  code: z
+    .string()
+    .trim()
+    .toUpperCase()
+    .min(2, "El codigo debe tener al menos 2 caracteres.")
+    .max(8, "El codigo debe tener maximo 8 caracteres.")
+    .regex(/^[A-Z0-9]+$/, "El codigo solo admite mayusculas y numeros."),
+  adminName: z.string().min(2, "Captura tu nombre."),
+  adminEmail: z.string().email("Correo invalido."),
+  adminPassword: z.string().min(8, "La contrasena debe tener al menos 8 caracteres."),
 });
 
 export const locationSettingSchema = z.object({

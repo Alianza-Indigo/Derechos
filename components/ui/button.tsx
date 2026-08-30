@@ -3,7 +3,9 @@ import type { AnchorHTMLAttributes, ButtonHTMLAttributes, ReactNode } from "reac
 import { cn } from "@/lib/utils";
 
 const variants = {
-  primary: "bg-teal-700 text-white hover:bg-teal-800",
+  // El primario usa el color de marca del inquilino (--brand) si esta definido
+  // en un ancestro; si no, cae al teal por defecto.
+  primary: "bg-[var(--brand,#0f766e)] text-white hover:brightness-95",
   secondary: "border border-slate-200 bg-white text-slate-900 hover:bg-slate-50",
   ghost: "text-slate-700 hover:bg-slate-100",
   danger: "bg-rose-700 text-white hover:bg-rose-800",
