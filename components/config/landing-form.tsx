@@ -1,12 +1,80 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { updateLandingAction } from "@/server/actions/platform";
-import type { LandingContent } from "@/lib/landing";
+import { LANDING_LIMITS, type Achievement, type LandingContent, type NewsItem, type TeamMember } from "@/lib/landing";
 
 const inputCls = "mt-1 h-10 w-full rounded-md border border-slate-300 px-3 text-sm";
 const areaCls = "mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
+const rowInput = "h-9 rounded-md border border-slate-300 px-2 text-sm";
+
+// Editor de una seccion repetible (equipo/noticias/logros). Mantiene las filas
+// en estado y las serializa a un input oculto JSON que consume el action.
+function SectionEditor<T extends Record<string, string | undefined>>({
+  title,
+  fieldName,
+  initial,
+  blank,
+  max,
+  columns,
+}: {
+  title: string;
+  fieldName: string;
+  initial: T[];
+  blank: T;
+  max: number;
+  columns: Array<{ key: keyof T; placeholder: string; textarea?: boolean }>;
+}) {
+  const [rows, setRows] = useState<T[]>(initial);
+  const update = (i: number, key: keyof T, value: string) =>
+    setRows((prev) => prev.map((row, idx) => (idx === i ? { ...row, [key]: value } : row)));
+  const clean = rows.filter((row) => Object.values(row).some((v) => (v ?? "").toString().trim()));
+  return (
+    <div className="rounded-md border border-slate-200 p-3">
+      <div className="flex items-center justify-between">
+        <span className="text-sm font-semibold text-slate-800">{title} <span className="font-normal text-slate-400">({clean.length}/{max})</span></span>
+        <button
+          type="button"
+          onClick={() => setRows((prev) => (prev.length >= max ? prev : [...prev, { ...blank }]))}
+          className="text-xs font-medium text-[var(--brand,#0f766e)] underline disabled:opacity-40"
+          disabled={rows.length >= max}
+        >
+          + Agregar
+        </button>
+      </div>
+      <input type="hidden" name={fieldName} value={JSON.stringify(clean)} />
+      <div className="mt-3 space-y-2">
+        {rows.length === 0 ? <p className="text-xs text-slate-400">Sin elementos.</p> : null}
+        {rows.map((row, i) => (
+          <div key={i} className="flex flex-wrap items-start gap-2">
+            {columns.map((col) =>
+              col.textarea ? (
+                <textarea
+                  key={String(col.key)}
+                  value={row[col.key] ?? ""}
+                  onChange={(e) => update(i, col.key, e.target.value)}
+                  placeholder={col.placeholder}
+                  rows={2}
+                  className="min-w-[12rem] flex-1 rounded-md border border-slate-300 px-2 py-1 text-sm"
+                />
+              ) : (
+                <input
+                  key={String(col.key)}
+                  value={row[col.key] ?? ""}
+                  onChange={(e) => update(i, col.key, e.target.value)}
+                  placeholder={col.placeholder}
+                  className={`${rowInput} min-w-[10rem] flex-1`}
+                />
+              ),
+            )}
+            <button type="button" onClick={() => setRows((prev) => prev.filter((_, idx) => idx !== i))} className="h-9 px-2 text-rose-600 hover:text-rose-800" title="Quitar">×</button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 export function LandingForm({ landing, publicUrl }: { landing: LandingContent; publicUrl?: string }) {
   const [state, action, pending] = useActionState(updateLandingAction, null);
@@ -62,6 +130,47 @@ export function LandingForm({ landing, publicUrl }: { landing: LandingContent; p
         <label className="block"><span className="text-sm font-medium text-slate-700">Twitter / X</span>
           <input name="twitter" defaultValue={landing.twitter ?? ""} className={inputCls} placeholder="https://..." />
         </label>
+      </div>
+
+      <div className="space-y-3 border-t border-slate-100 pt-4">
+        <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Secciones del sitio</p>
+        <SectionEditor<TeamMember>
+          title="Equipo"
+          fieldName="teamJson"
+          initial={landing.team ?? []}
+          blank={{ name: "", role: "", photoUrl: "" }}
+          max={LANDING_LIMITS.team}
+          columns={[
+            { key: "name", placeholder: "Nombre" },
+            { key: "role", placeholder: "Cargo" },
+            { key: "photoUrl", placeholder: "Foto (URL)" },
+          ]}
+        />
+        <SectionEditor<NewsItem>
+          title="Noticias / comunicados"
+          fieldName="newsJson"
+          initial={landing.news ?? []}
+          blank={{ title: "", date: "", body: "", link: "" }}
+          max={LANDING_LIMITS.news}
+          columns={[
+            { key: "title", placeholder: "Titulo" },
+            { key: "date", placeholder: "Fecha (ej. 2026-08-01)" },
+            { key: "body", placeholder: "Resumen", textarea: true },
+            { key: "link", placeholder: "Enlace (URL)" },
+          ]}
+        />
+        <SectionEditor<Achievement>
+          title="Logros / indicadores"
+          fieldName="achievementsJson"
+          initial={landing.achievements ?? []}
+          blank={{ label: "", value: "", description: "" }}
+          max={LANDING_LIMITS.achievements}
+          columns={[
+            { key: "value", placeholder: "Dato (ej. 1,200)" },
+            { key: "label", placeholder: "Etiqueta (ej. casos atendidos)" },
+            { key: "description", placeholder: "Detalle (opcional)" },
+          ]}
+        />
       </div>
 
       <div className="flex items-center gap-3">

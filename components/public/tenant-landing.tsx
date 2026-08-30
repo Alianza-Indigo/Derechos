@@ -75,6 +75,67 @@ export function TenantLanding({ site }: { site: PublicSite }) {
             </section>
           ) : null}
 
+          {landing.achievements?.length ? (
+            <section className="border-t border-slate-200 px-4 py-12 sm:px-8">
+              <div className="mx-auto max-w-4xl">
+                <h2 className="text-xl font-semibold">Logros e indicadores</h2>
+                <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                  {landing.achievements.map((a, i) => (
+                    <div key={i} className="rounded-lg border border-slate-200 p-5">
+                      {a.value ? <p className="text-3xl font-bold text-[var(--brand,#0f766e)]">{a.value}</p> : null}
+                      <p className="mt-1 font-medium text-slate-900">{a.label}</p>
+                      {a.description ? <p className="mt-1 text-sm text-slate-600">{a.description}</p> : null}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </section>
+          ) : null}
+
+          {landing.team?.length ? (
+            <section className="border-t border-slate-200 bg-slate-50 px-4 py-12 sm:px-8">
+              <div className="mx-auto max-w-4xl">
+                <h2 className="text-xl font-semibold">Nuestro equipo</h2>
+                <div className="mt-6 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+                  {landing.team.map((m, i) => (
+                    <div key={i} className="flex items-center gap-3">
+                      {m.photoUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={m.photoUrl} alt={m.name} className="size-14 rounded-full object-cover" />
+                      ) : (
+                        <div className="flex size-14 items-center justify-center rounded-full bg-[var(--brand,#0f766e)] text-lg font-bold text-white">{m.name.charAt(0)}</div>
+                      )}
+                      <div>
+                        <p className="font-medium text-slate-900">{m.name}</p>
+                        {m.role ? <p className="text-sm text-slate-600">{m.role}</p> : null}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </section>
+          ) : null}
+
+          {landing.news?.length ? (
+            <section className="border-t border-slate-200 px-4 py-12 sm:px-8">
+              <div className="mx-auto max-w-3xl">
+                <h2 className="text-xl font-semibold">Noticias y comunicados</h2>
+                <div className="mt-6 space-y-6">
+                  {landing.news.map((n, i) => (
+                    <article key={i} className="border-b border-slate-100 pb-5 last:border-0">
+                      <div className="flex flex-wrap items-baseline justify-between gap-2">
+                        <h3 className="font-semibold text-slate-900">{n.title}</h3>
+                        {n.date ? <span className="text-xs text-slate-500">{n.date}</span> : null}
+                      </div>
+                      {n.body ? <p className="mt-2 whitespace-pre-line text-slate-700">{n.body}</p> : null}
+                      {n.link ? <a href={n.link} target="_blank" rel="noreferrer" className="mt-2 inline-block text-sm text-[var(--brand,#0f766e)] underline">Leer mas</a> : null}
+                    </article>
+                  ))}
+                </div>
+              </div>
+            </section>
+          ) : null}
+
           {(landing.contactEmail || landing.contactPhone || landing.address || landing.website) ? (
             <section className="border-t border-slate-200 bg-slate-50 px-4 py-12 sm:px-8">
               <div className="mx-auto grid max-w-3xl gap-4 sm:grid-cols-2">

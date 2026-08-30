@@ -45,7 +45,7 @@ import {
   userFormSchema,
   userStatusSchema,
 } from "@/lib/validators";
-import type { LandingContent } from "@/lib/landing";
+import { normalizeLanding, type LandingContent } from "@/lib/landing";
 import { writeAuditLog } from "@/server/audit/log";
 import { getDb } from "@/server/db";
 import { canAccessTerritory, hasAnyPermission } from "@/server/permissions/rbac";
@@ -990,7 +990,17 @@ export async function updateLandingAction(_: ActionResult | null, formData: Form
     const trimmed = value?.trim();
     return trimmed ? trimmed : undefined;
   };
-  const landing: LandingContent = {
+  // Las secciones (equipo/noticias/logros) llegan como JSON serializado desde
+  // el editor. Se parsean con tolerancia y normalizeLanding las sanea y acota.
+  const parseJson = (value: FormDataEntryValue | null): unknown => {
+    if (typeof value !== "string" || !value.trim()) return undefined;
+    try {
+      return JSON.parse(value);
+    } catch {
+      return undefined;
+    }
+  };
+  const raw = {
     published: d.published,
     acceptsPublicReports: d.acceptsPublicReports,
     tagline: clean(d.tagline),
@@ -1004,7 +1014,11 @@ export async function updateLandingAction(_: ActionResult | null, formData: Form
     facebook: clean(d.facebook),
     instagram: clean(d.instagram),
     twitter: clean(d.twitter),
+    team: parseJson(formData.get("teamJson")),
+    news: parseJson(formData.get("newsJson")),
+    achievements: parseJson(formData.get("achievementsJson")),
   };
+  const landing: LandingContent = normalizeLanding(raw);
   const db = getDb();
   await db.update(schema.organizations).set({ landing, updatedAt: new Date() }).where(eq(schema.organizations.id, user.organizationId));
   await writeAuditLog({ actorId: user.id, action: "organization.landing_update", entityType: "organization", entityId: user.organizationId, after: { published: landing.published } });

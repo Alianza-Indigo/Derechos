@@ -51,3 +51,26 @@ describe("planes", () => {
     expect(planLimits("xyz").maxUsers).toBe(3);
   });
 });
+
+describe("normalizeLanding secciones", () => {
+  it("parsea y acota equipo/noticias/logros, descarta vacios", async () => {
+    const { normalizeLanding, LANDING_LIMITS } = await import("@/lib/landing");
+    const landing = normalizeLanding({
+      published: true,
+      team: [
+        { name: "Ana", role: "Directora", photoUrl: "" },
+        { name: "", role: "vacio" },
+        ...Array.from({ length: 40 }, (_, i) => ({ name: `M${i}` })),
+      ],
+      news: [{ title: "Comunicado", date: "2026-08-01", body: "Texto", link: "https://x.org" }, { title: "" }],
+      achievements: [{ label: "Casos", value: "1200" }, { value: "sin label" }],
+    });
+    // Ana + 40 M => acotado al maximo de equipo
+    expect(landing.team?.length).toBe(LANDING_LIMITS.team);
+    expect(landing.team?.[0]).toEqual({ name: "Ana", role: "Directora", photoUrl: undefined });
+    expect(landing.news?.length).toBe(1);
+    expect(landing.news?.[0].title).toBe("Comunicado");
+    expect(landing.achievements?.length).toBe(1);
+    expect(landing.achievements?.[0].label).toBe("Casos");
+  });
+});
