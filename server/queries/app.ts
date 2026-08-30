@@ -30,14 +30,24 @@ const warmReference = cache(async () => {
 export async function getCurrentUser(): Promise<User> {
   await warmReference();
   const session = await getServerSession(authOptions);
+  const sessionUserId = session?.user?.id;
   const sessionEmail = session?.user?.email?.toLowerCase();
-  if (!sessionEmail) {
+  if (!sessionUserId && !sessionEmail) {
     redirect("/login");
   }
   const db = getDb();
-  const [user] = await db.select().from(schema.users).where(eq(schema.users.email, sessionEmail)).limit(1);
+  // Se resuelve por el id de la sesion (unico global). El correo es unico solo
+  // por-inquilino, asi que se usa apenas como respaldo de sesiones antiguas.
+  const [user] = sessionUserId
+    ? await db.select().from(schema.users).where(eq(schema.users.id, sessionUserId)).limit(1)
+    : await db.select().from(schema.users).where(eq(schema.users.email, sessionEmail!)).limit(1);
   if (!user) {
     redirect("/login");
+  }
+  // Inquilino suspendido: se corta el acceso aunque la sesion siga viva.
+  const [org] = await db.select({ status: schema.organizations.status }).from(schema.organizations).where(eq(schema.organizations.id, user.organizationId)).limit(1);
+  if (!org || org.status !== "active") {
+    redirect("/login?suspendida=1");
   }
   const roleRows = await db
     .select({ role: schema.roles.key, scopeId: schema.userRoles.scopeId })

@@ -1,6 +1,6 @@
 import type { NextAuthOptions } from "next-auth";
 import { compare } from "bcryptjs";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import CredentialsProvider from "next-auth/providers/credentials";
 import * as schema from "@/drizzle/schema";
 import { getDb } from "@/server/db";
@@ -18,10 +18,12 @@ export const authOptions: NextAuthOptions = {
       credentials: {
         email: { label: "Correo", type: "email" },
         password: { label: "Contrasena", type: "password" },
+        orgCode: { label: "Codigo de organizacion", type: "text" },
       },
       async authorize(credentials, req) {
         const email = credentials?.email?.toLowerCase().trim();
         const password = credentials?.password;
+        const orgCode = credentials?.orgCode?.toUpperCase().trim();
         if (!email || !password) {
           return null;
         }
@@ -31,9 +33,39 @@ export const authOptions: NextAuthOptions = {
           return null;
         }
         const db = getDb();
-        const [user] = await db.select().from(schema.users).where(eq(schema.users.email, email)).limit(1);
-        if (!user?.passwordHash || user.status !== "active") {
-          await writeAuditLog({ actorId: user?.id, action: "login.fail", entityType: "user", entityId: email, after: { reason: "usuario_inexistente_o_inactivo" }, ip: forwarded });
+        // Un correo puede repetirse entre organizaciones (unico por-inquilino).
+        // Se traen todos los candidatos con el estado de su organizacion; si el
+        // usuario indico un codigo de organizacion se filtra por el.
+        const rows = await db
+          .select({
+            id: schema.users.id,
+            name: schema.users.name,
+            email: schema.users.email,
+            passwordHash: schema.users.passwordHash,
+            status: schema.users.status,
+            orgStatus: schema.organizations.status,
+            orgCode: schema.organizations.code,
+          })
+          .from(schema.users)
+          .innerJoin(schema.organizations, eq(schema.organizations.id, schema.users.organizationId))
+          .where(orgCode ? and(eq(schema.users.email, email), eq(schema.organizations.code, orgCode)) : eq(schema.users.email, email));
+
+        if (rows.length === 0) {
+          await writeAuditLog({ action: "login.fail", entityType: "user", entityId: email, after: { reason: "usuario_inexistente" }, ip: forwarded });
+          return null;
+        }
+        if (rows.length > 1) {
+          // Correo compartido por varias organizaciones: exige el codigo.
+          await writeAuditLog({ action: "login.fail", entityType: "user", entityId: email, after: { reason: "requiere_codigo_organizacion" }, ip: forwarded });
+          return null;
+        }
+        const user = rows[0];
+        if (!user.passwordHash || user.status !== "active") {
+          await writeAuditLog({ actorId: user.id, action: "login.fail", entityType: "user", entityId: email, after: { reason: "usuario_inactivo" }, ip: forwarded });
+          return null;
+        }
+        if (user.orgStatus !== "active") {
+          await writeAuditLog({ actorId: user.id, action: "login.fail", entityType: "user", entityId: email, after: { reason: "organizacion_suspendida" }, ip: forwarded });
           return null;
         }
         const valid = await compare(password, user.passwordHash);
@@ -52,9 +84,11 @@ export const authOptions: NextAuthOptions = {
   ],
   callbacks: {
     async jwt({ token, user }) {
-      if (user?.email) {
+      // Se resuelve por el id ya autenticado (no por correo, que puede repetirse
+      // entre organizaciones) para no cruzar de inquilino al hidratar el token.
+      if (user?.id) {
         const db = getDb();
-        const [profile] = await db.select().from(schema.users).where(eq(schema.users.email, user.email)).limit(1);
+        const [profile] = await db.select().from(schema.users).where(eq(schema.users.id, user.id)).limit(1);
         if (profile) {
           const rows = await db
             .select({ role: schema.roles.key, scopeId: schema.userRoles.scopeId })

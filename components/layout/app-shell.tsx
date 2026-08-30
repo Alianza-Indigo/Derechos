@@ -1,12 +1,18 @@
 import Link from "next/link";
+import { Building2 } from "lucide-react";
 import type { ReactNode } from "react";
 import { navigationItems, APP_NAME } from "@/lib/constants";
 import { LogoutButton } from "@/components/layout/logout-button";
 import { cn, initials } from "@/lib/utils";
 import { getCurrentUser } from "@/server/queries/app";
+import { isPlatformOwner } from "@/server/permissions/platform";
 
 export async function AppShell({ children }: { children: ReactNode }) {
   const user = await getCurrentUser();
+  // La consola de plataforma solo se muestra a la duena de la plataforma.
+  const items = isPlatformOwner(user)
+    ? [{ href: "/plataforma", label: "Plataforma", icon: Building2 }, ...navigationItems]
+    : navigationItems;
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -19,7 +25,7 @@ export async function AppShell({ children }: { children: ReactNode }) {
           </div>
         </div>
         <nav className="space-y-1 p-3">
-          {navigationItems.map((item) => (
+          {items.map((item) => (
             <Link key={item.href} href={item.href} className={cn("flex items-center gap-3 rounded-md px-3 py-2 text-sm text-slate-700 hover:bg-slate-100")}>
               <item.icon className="size-4" />
               {item.label}
