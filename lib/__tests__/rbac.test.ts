@@ -6,8 +6,17 @@ import {
   canViewSensitive,
   hasAnyPermission,
   hasPermission,
+  setTerritoryHierarchy,
 } from "@/server/permissions/rbac";
 import type { HumanRightsCase } from "@/lib/types";
+
+// Jerarquia territorial del demo: mx -> chh -> {cdj, chc}.
+setTerritoryHierarchy([
+  { id: "mx", parentId: null },
+  { id: "chh", parentId: "mx" },
+  { id: "cdj", parentId: "chh" },
+  { id: "chc", parentId: "chh" },
+]);
 
 const make = (roles: User["roles"], territoryId?: string): User => ({
   id: "u",

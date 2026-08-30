@@ -10,7 +10,7 @@ import * as schema from "@/drizzle/schema";
 import { getDb } from "@/server/db";
 import { authOptions } from "@/server/auth/options";
 import { writeAuditLog } from "@/server/audit/log";
-import { canAccessCase, canAccessTerritory, canViewSensitive, hasAnyPermission } from "@/server/permissions/rbac";
+import { canAccessCase, canAccessTerritory, canViewSensitive, hasAnyPermission, setTerritoryHierarchy } from "@/server/permissions/rbac";
 
 // La aplicacion lee siempre de Postgres (getDb exige DATABASE_URL). Los nombres
 // de referencia (territorios/usuarios) se cargan en una cache por-peticion para
@@ -21,11 +21,14 @@ let userNameCache = new Map<string, string>();
 const warmReference = cache(async () => {
   const db = getDb();
   const [territoryRows, userRows] = await Promise.all([
-    db.select({ id: schema.territories.id, name: schema.territories.name }).from(schema.territories),
+    db.select({ id: schema.territories.id, name: schema.territories.name, parentId: schema.territories.parentId }).from(schema.territories),
     db.select({ id: schema.users.id, name: schema.users.name }).from(schema.users),
   ]);
   territoryNameCache = new Map(territoryRows.map((row) => [row.id, row.name]));
   userNameCache = new Map(userRows.map((row) => [row.id, row.name]));
+  // Alimenta la jerarquia territorial usada por canAccessTerritory (por-tenant
+  // no hace falta: los ids son globales y el acceso ya se filtra por org).
+  setTerritoryHierarchy(territoryRows.map((row) => ({ id: row.id, parentId: row.parentId })));
 });
 
 export async function getCurrentUser(): Promise<User> {

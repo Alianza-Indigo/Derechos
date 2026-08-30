@@ -71,6 +71,37 @@ async function orgCode(db: ReturnType<typeof getDb>, organizationId: string) {
   return org?.code ?? "ORG";
 }
 
+// Verifica que los IDs referenciados en una accion pertenezcan a la
+// organizacion del actor. Evita que una request fabricada enlace datos de
+// otro tenant (territorios, usuarios, comisiones, estudios, indicadores).
+async function orgRefError(
+  db: ReturnType<typeof getDb>,
+  org: string,
+  refs: { territoryId?: string | null; userId?: string | null; commissionId?: string | null; studyId?: string | null; metricId?: string | null },
+): Promise<string | null> {
+  if (refs.territoryId) {
+    const [row] = await db.select({ id: schema.territories.id }).from(schema.territories).where(and(eq(schema.territories.id, refs.territoryId), eq(schema.territories.organizationId, org))).limit(1);
+    if (!row) return "El territorio seleccionado no pertenece a tu organizacion.";
+  }
+  if (refs.userId) {
+    const [row] = await db.select({ id: schema.users.id }).from(schema.users).where(and(eq(schema.users.id, refs.userId), eq(schema.users.organizationId, org))).limit(1);
+    if (!row) return "El usuario seleccionado no pertenece a tu organizacion.";
+  }
+  if (refs.commissionId) {
+    const [row] = await db.select({ id: schema.fieldCommissions.id }).from(schema.fieldCommissions).where(and(eq(schema.fieldCommissions.id, refs.commissionId), eq(schema.fieldCommissions.organizationId, org))).limit(1);
+    if (!row) return "La comision seleccionada no pertenece a tu organizacion.";
+  }
+  if (refs.studyId) {
+    const [row] = await db.select({ id: schema.prevalenceStudies.id }).from(schema.prevalenceStudies).where(and(eq(schema.prevalenceStudies.id, refs.studyId), eq(schema.prevalenceStudies.organizationId, org))).limit(1);
+    if (!row) return "El estudio seleccionado no pertenece a tu organizacion.";
+  }
+  if (refs.metricId) {
+    const [row] = await db.select({ id: schema.prevalenceMetrics.id }).from(schema.prevalenceMetrics).where(and(eq(schema.prevalenceMetrics.id, refs.metricId), eq(schema.prevalenceMetrics.organizationId, org))).limit(1);
+    if (!row) return "El indicador seleccionado no pertenece a tu organizacion.";
+  }
+  return null;
+}
+
 // --------------------------------------------------------------------------
 // Miembros
 // --------------------------------------------------------------------------
@@ -255,6 +286,10 @@ export async function createCaseAction(_: ActionResult | null, formData: FormDat
   const overCapacity = await planCapacityError(org, "cases");
   if (overCapacity) {
     return { ok: false, message: overCapacity };
+  }
+  const refError = await orgRefError(db, org, { territoryId: d.territoryId, userId: d.assignedTo });
+  if (refError) {
+    return { ok: false, message: refError };
   }
   const [{ total }] = await db.select({ total: sql<number>`count(*)::int` }).from(schema.cases).where(eq(schema.cases.organizationId, org));
   const id = crypto.randomUUID();
@@ -496,6 +531,10 @@ export async function createEventAction(_: ActionResult | null, formData: FormDa
   }
 
   const db = getDb();
+  const refError = await orgRefError(db, user.organizationId, { territoryId: parsed.data.territoryId });
+  if (refError) {
+    return { ok: false, message: refError };
+  }
   const id = crypto.randomUUID();
   await db.insert(schema.events).values({
     id,
@@ -532,6 +571,10 @@ export async function createCommissionAction(_: ActionResult | null, formData: F
   }
 
   const db = getDb();
+  const refError = await orgRefError(db, user.organizationId, { territoryId: parsed.data.territoryId, userId: parsed.data.assignedTo });
+  if (refError) {
+    return { ok: false, message: refError };
+  }
   const id = crypto.randomUUID();
   await db.insert(schema.fieldCommissions).values({
     id,
@@ -559,6 +602,10 @@ export async function createCheckInAction(_: ActionResult | null, formData: Form
   }
 
   const db = getDb();
+  const refError = await orgRefError(db, user.organizationId, { territoryId: parsed.data.territoryId, commissionId: parsed.data.fieldCommissionId || null });
+  if (refError) {
+    return { ok: false, message: refError };
+  }
   const [setting] = await db.select().from(schema.locationTrackingSettings).where(eq(schema.locationTrackingSettings.userId, user.id)).limit(1);
   if (setting && !setting.enabled) {
     return { ok: false, message: "La geolocalizacion esta deshabilitada o pausada para este usuario." };
@@ -714,7 +761,7 @@ export async function runAssistantAction(_: ActionResult | null, formData: FormD
     };
   }
 
-  const result = await runAssistant({ prompt, message: parsed.data.message, context });
+  const result = await runAssistant({ prompt, message: parsed.data.message, context, organizationId: user.organizationId });
 
   await writeAuditLog({
     actorId: user.id,
@@ -864,6 +911,10 @@ export async function createPrevalenceRecordAction(_: ActionResult | null, formD
     return { ok: false, message: parsed.error.issues[0]?.message ?? "Medicion invalida." };
   }
   const db = getDb();
+  const refError = await orgRefError(db, user.organizationId, { studyId: parsed.data.studyId, metricId: parsed.data.metricId, territoryId: parsed.data.territoryId });
+  if (refError) {
+    return { ok: false, message: refError };
+  }
   const id = crypto.randomUUID();
   await db.insert(schema.prevalenceRecords).values({
     id,
@@ -916,6 +967,10 @@ export async function createMetricAction(_: ActionResult | null, formData: FormD
     return { ok: false, message: parsed.error.issues[0]?.message ?? "Datos invalidos." };
   }
   const db = getDb();
+  const refError = await orgRefError(db, user.organizationId, { studyId: parsed.data.studyId });
+  if (refError) {
+    return { ok: false, message: refError };
+  }
   const [inserted] = await db.insert(schema.prevalenceMetrics).values({
     organizationId: user.organizationId,
     studyId: parsed.data.studyId,
@@ -1625,6 +1680,10 @@ export async function reassignCaseAction(_: ActionResult | null, formData: FormD
     return { ok: false, message: "No tienes acceso a este caso." };
   }
   const db = getDb();
+  const refError = await orgRefError(db, user.organizationId, { userId: parsed.data.assignedTo });
+  if (refError) {
+    return { ok: false, message: refError };
+  }
   await db.update(schema.cases).set({ assignedTo: parsed.data.assignedTo }).where(and(eq(schema.cases.id, parsed.data.caseId), eq(schema.cases.organizationId, user.organizationId)));
   await writeAuditLog({ actorId: user.id, action: "case.reassign", entityType: "case", entityId: parsed.data.caseId, before: { assignedTo: record.assignedTo }, after: { assignedTo: parsed.data.assignedTo } });
   revalidatePath(`/casos/${parsed.data.caseId}`);

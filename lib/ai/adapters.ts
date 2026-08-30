@@ -2,6 +2,7 @@ import { createAnthropic } from "@ai-sdk/anthropic";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createOpenAI } from "@ai-sdk/openai";
 import { generateText } from "ai";
+import { eq } from "drizzle-orm";
 import { aiProviderConfigs } from "@/drizzle/schema";
 import { getDb } from "@/server/db";
 import type { AiPromptTemplate } from "@/lib/types";
@@ -10,6 +11,8 @@ type RunAssistantInput = {
   prompt: AiPromptTemplate;
   message: string;
   context: Record<string, unknown>;
+  // Tenant al que pertenece el prompt: acota la busqueda de proveedores IA.
+  organizationId: string;
 };
 
 type ResolvedProvider = {
@@ -28,7 +31,7 @@ const ENV_BY_PROVIDER: Record<ResolvedProvider["key"], string> = {
   openai: "OPENAI_API_KEY",
 };
 
-export async function runAssistant({ prompt, message, context }: RunAssistantInput) {
+export async function runAssistant({ prompt, message, context, organizationId }: RunAssistantInput) {
   if (blockedPatterns.some((pattern) => pattern.test(message))) {
     return {
       output:
@@ -40,7 +43,7 @@ export async function runAssistant({ prompt, message, context }: RunAssistantInp
     };
   }
 
-  const { selected, candidates } = await resolveProvider(prompt);
+  const { selected, candidates } = await resolveProvider(prompt, organizationId);
   const keyFor = (p: ResolvedProvider) => p.apiKey || process.env[ENV_BY_PROVIDER[p.key]] || "";
   let active = selected;
   // Proveedor deshabilitado: no se ejecuta en modo simulado; se intenta un
@@ -112,9 +115,14 @@ function toResolved(config: typeof aiProviderConfigs.$inferSelect): ResolvedProv
   };
 }
 
-async function resolveProvider(prompt: AiPromptTemplate): Promise<{ selected: ResolvedProvider; candidates: ResolvedProvider[] }> {
+async function resolveProvider(prompt: AiPromptTemplate, organizationId: string): Promise<{ selected: ResolvedProvider; candidates: ResolvedProvider[] }> {
   const db = getDb();
-  const configs = await db.select().from(aiProviderConfigs).orderBy(aiProviderConfigs.priority);
+  // Solo proveedores de la organizacion (tenant) del prompt.
+  const configs = await db
+    .select()
+    .from(aiProviderConfigs)
+    .where(eq(aiProviderConfigs.organizationId, organizationId))
+    .orderBy(aiProviderConfigs.priority);
   const candidates = configs.map(toResolved);
   const defaultProvider = (process.env.AI_DEFAULT_PROVIDER as ResolvedProvider["key"]) || "openai";
   const providerKey = prompt.providerKey === "global" ? defaultProvider : prompt.providerKey;

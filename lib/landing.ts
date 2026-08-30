@@ -36,6 +36,18 @@ function asString(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
+// Solo admite URLs http(s); descarta esquemas peligrosos (javascript:, data:).
+function asUrl(value: unknown): string | undefined {
+  const s = asString(value);
+  if (!s) return undefined;
+  try {
+    const u = new URL(s);
+    return u.protocol === "http:" || u.protocol === "https:" ? s : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 function asArray(value: unknown): Record<string, unknown>[] {
   return Array.isArray(value) ? value.filter((item): item is Record<string, unknown> => !!item && typeof item === "object") : [];
 }
@@ -48,11 +60,11 @@ export function normalizeLanding(value: unknown): LandingContent {
   const str = (key: string) => asString(v[key]);
 
   const team = asArray(v.team)
-    .map((m) => ({ name: asString(m.name) ?? "", role: asString(m.role), photoUrl: asString(m.photoUrl) }))
+    .map((m) => ({ name: asString(m.name) ?? "", role: asString(m.role), photoUrl: asUrl(m.photoUrl) }))
     .filter((m) => m.name)
     .slice(0, LANDING_LIMITS.team);
   const news = asArray(v.news)
-    .map((n) => ({ title: asString(n.title) ?? "", date: asString(n.date), body: asString(n.body), link: asString(n.link) }))
+    .map((n) => ({ title: asString(n.title) ?? "", date: asString(n.date), body: asString(n.body), link: asUrl(n.link) }))
     .filter((n) => n.title)
     .slice(0, LANDING_LIMITS.news);
   const achievements = asArray(v.achievements)
@@ -66,14 +78,14 @@ export function normalizeLanding(value: unknown): LandingContent {
     tagline: str("tagline"),
     about: str("about"),
     mission: str("mission"),
-    heroImageUrl: str("heroImageUrl"),
+    heroImageUrl: asUrl(v.heroImageUrl),
     contactEmail: str("contactEmail"),
     contactPhone: str("contactPhone"),
     address: str("address"),
-    website: str("website"),
-    facebook: str("facebook"),
-    instagram: str("instagram"),
-    twitter: str("twitter"),
+    website: asUrl(v.website),
+    facebook: asUrl(v.facebook),
+    instagram: asUrl(v.instagram),
+    twitter: asUrl(v.twitter),
     team: team.length ? team : undefined,
     news: news.length ? news : undefined,
     achievements: achievements.length ? achievements : undefined,

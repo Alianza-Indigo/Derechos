@@ -8,6 +8,7 @@ import { getDb } from "@/server/db";
 import { writeAuditLog } from "@/server/audit/log";
 import { rateLimit } from "@/lib/rate-limit";
 import { getPublicSiteFromHeaders } from "@/server/queries/tenant";
+import { planCapacityError } from "@/server/permissions/plan";
 
 type ActionResult = { ok: boolean; message: string };
 
@@ -60,6 +61,12 @@ export async function submitPublicReportAction(_: ActionResult | null, formData:
   const d = parsed.data;
   const db = getDb();
   const org = site.id;
+
+  // El reporte publico tambien cuenta contra el cupo de casos del plan.
+  const overCapacity = await planCapacityError(org, "cases");
+  if (overCapacity) {
+    return { ok: false, message: "Por el momento no es posible recibir mas reportes en linea. Contacta a la organizacion por otro medio." };
+  }
 
   const intakeUser = await resolveIntakeUser(db, org);
   if (!intakeUser) {

@@ -4,7 +4,7 @@ import { rateLimit } from "@/lib/rate-limit";
 import { stableUuid } from "@/lib/stable-id";
 import { caseStatusUpdateSchema, providerConfigSchema } from "@/lib/validators";
 import { aiProviderConfigs, aiPromptTemplates, members, organization } from "@/lib/mock-data";
-import { canAccessTerritory } from "@/server/permissions/rbac";
+import { canAccessTerritory, setTerritoryHierarchy } from "@/server/permissions/rbac";
 
 describe("plataforma derechos humanos", () => {
   it("carga seed completo del PRD", () => {
@@ -43,6 +43,13 @@ describe("plataforma derechos humanos", () => {
   });
 
   it("mantiene el alcance territorial estable con ids sembrados en DB", () => {
+    // Jerarquia con ids uuid como en la base sembrada.
+    setTerritoryHierarchy([
+      { id: stableUuid("mx"), parentId: null },
+      { id: stableUuid("chh"), parentId: stableUuid("mx") },
+      { id: stableUuid("cdj"), parentId: stableUuid("chh") },
+      { id: stableUuid("chc"), parentId: stableUuid("chh") },
+    ]);
     const chihuahuaDbId = stableUuid("chh");
     expect(canAccessTerritory({ id: "u", organizationId: "org_demo", name: "Local", email: "l@b.c", status: "active", roles: ["municipal_coordination"], territoryId: chihuahuaDbId }, stableUuid("cdj"))).toBe(true);
   });

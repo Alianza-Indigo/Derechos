@@ -17,6 +17,7 @@ import { isPlatformOwner } from "@/server/permissions/platform";
 import { writeAuditLog } from "@/server/audit/log";
 import { rateLimit } from "@/lib/rate-limit";
 import { headers } from "next/headers";
+import { bootstrapOrganization } from "@/server/tenant/bootstrap";
 
 type ActionResult = { ok: boolean; message: string };
 
@@ -93,6 +94,9 @@ export async function createOrganizationAction(_: ActionResult | null, formData:
       scopeId: null,
     });
   }
+
+  // Configuracion base operativa (territorio raiz, proveedores IA, prompts).
+  await bootstrapOrganization({ organizationId: orgId, country: data.country, adminUserId: userId });
 
   await writeAuditLog({
     actorId: actor.id,
@@ -260,6 +264,9 @@ export async function registerOrganizationAction(_: ActionResult | null, formDat
   if (superRole) {
     await db.insert(schema.userRoles).values({ organizationId: orgId, userId, roleId: superRole.id, scopeType: "global", scopeId: null });
   }
+
+  // Configuracion base operativa para que la org sea usable al aprobarse.
+  await bootstrapOrganization({ organizationId: orgId, country: data.country, adminUserId: userId });
 
   await writeAuditLog({
     organizationId: orgId,

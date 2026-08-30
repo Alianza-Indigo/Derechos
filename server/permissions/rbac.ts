@@ -1,6 +1,28 @@
 import type { HumanRightsCase, RoleKey, User } from "@/lib/types";
 import { stableUuid } from "@/lib/stable-id";
 
+// Jerarquia territorial (hijo -> padre) cargada desde la base por peticion. Se
+// usa para resolver el alcance por territorio sin cablear ninguna geografia.
+let territoryParent = new Map<string, string | null>();
+
+export function setTerritoryHierarchy(rows: Array<{ id: string; parentId: string | null }>) {
+  territoryParent = new Map(rows.map((row) => [row.id, row.parentId ?? null]));
+}
+
+// Verdadero si `ancestor` es el propio `target` o alguno de sus ancestros por
+// parentId. Tolera equivalencia id-legible/uuid (stableUuid) del demo/seed.
+function isSelfOrAncestor(ancestor: string | undefined, target: string | undefined): boolean {
+  if (!ancestor || !target) return false;
+  let current: string | null | undefined = target;
+  const seen = new Set<string>();
+  while (current && !seen.has(current)) {
+    if (sameScope(ancestor, current)) return true;
+    seen.add(current);
+    current = territoryParent.get(current) ?? null;
+  }
+  return false;
+}
+
 const rolePermissions: Record<RoleKey, string[]> = {
   super_admin: ["*"],
   national_direction: ["read:national", "write:config", "approve", "audit", "ai:admin", "location:read", "reports:export"],
@@ -35,13 +57,8 @@ export function canAccessTerritory(user: User, territoryId?: string) {
   if (!territoryId) {
     return false;
   }
-  if (sameScope(user.territoryId, territoryId)) {
-    return true;
-  }
-  if (sameScope(user.territoryId, "chh") && ["cdj", "chc"].some((child) => sameScope(child, territoryId))) {
-    return true;
-  }
-  return false;
+  // El usuario accede a su territorio y a todos sus descendientes (por parentId).
+  return isSelfOrAncestor(user.territoryId, territoryId);
 }
 
 export function canAccessCase(user: User, record: HumanRightsCase) {

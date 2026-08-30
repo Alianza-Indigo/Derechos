@@ -30,6 +30,18 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Archivo requerido." }, { status: 400 });
   }
 
+  // Limites server-side de tamano y tipo. Las fotos de miembro son imagenes;
+  // la evidencia admite imagenes y PDF.
+  const MAX_BYTES = 8 * 1024 * 1024;
+  if (file.size > MAX_BYTES) {
+    return NextResponse.json({ error: "El archivo supera el limite de 8 MB." }, { status: 413 });
+  }
+  const imageTypes = ["image/jpeg", "image/png", "image/webp", "image/gif"];
+  const allowed = isOwnPhoto ? imageTypes : [...imageTypes, "application/pdf"];
+  if (!allowed.includes(file.type)) {
+    return NextResponse.json({ error: `Tipo de archivo no permitido (${file.type || "desconocido"}).` }, { status: 415 });
+  }
+
   if (!process.env.BLOB_READ_WRITE_TOKEN) {
     return NextResponse.json({
       url: `vercel-blob://pendiente/${entityType}/${file.name}`,
