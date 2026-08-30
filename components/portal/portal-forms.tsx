@@ -11,6 +11,8 @@ function Msg({ state }: { state: { ok: boolean; message: string } | null }) {
 }
 
 const inputCls = "mt-1 h-10 w-full rounded-md border border-slate-300 px-3 text-sm";
+const GENDERS = ["No especificado", "Femenino", "Masculino", "Otro"];
+const AGE_GROUPS = ["No especificado", "Ninez (0-11)", "Adolescencia (12-17)", "Adultez (18-59)", "Persona mayor (60+)"];
 
 export function MemberReportForm() {
   const [state, action, pending] = useActionState(createMemberReportAction, null);
@@ -26,9 +28,11 @@ export function MemberReportForm() {
           <select name="category" className={inputCls}>{caseCategories.map((category) => <option key={category} value={category}>{category}</option>)}</select></label>
         <label><span className="text-sm font-medium text-slate-700">Fecha de los hechos</span>
           <input name="incidentDate" type="date" className={inputCls} /></label>
+        <label><span className="text-sm font-medium text-slate-700">Lugar de los hechos</span>
+          <input name="incidentLocation" placeholder="Direccion, colonia o referencia" className={inputCls} /></label>
         <div className="md:col-span-2">
-          <label><span className="text-sm font-medium text-slate-700">Lugar de los hechos</span>
-            <input name="incidentLocation" placeholder="Direccion, colonia o referencia" className={inputCls} /></label>
+          <label><span className="text-sm font-medium text-slate-700">Derecho vulnerado o tipo de violacion</span>
+            <input name="rightViolated" placeholder="Ej. Acceso a la salud, no discriminacion, debido proceso" className={inputCls} /></label>
         </div>
         <div className="md:col-span-2">
           <label><span className="text-sm font-medium text-slate-700">Descripcion de los hechos</span>
@@ -37,7 +41,8 @@ export function MemberReportForm() {
       </section>
 
       <section className="space-y-3 rounded-md border border-slate-200 bg-slate-50 p-4">
-        <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
+        <h3 className="text-sm font-semibold text-slate-700">Persona afectada</h3>
+        <label className="flex items-center gap-2 text-sm text-slate-700">
           <input type="checkbox" name="onBehalf" value="true" checked={onBehalf} onChange={(e) => setOnBehalf(e.target.checked)} className="size-4" />
           Reporto en nombre de otra persona (no soy la persona afectada).
         </label>
@@ -51,6 +56,17 @@ export function MemberReportForm() {
               <input name="affectedRelation" placeholder="Ej. Familiar, vecino" className={inputCls} /></label>
           </div>
         ) : null}
+        <div className="grid gap-4 md:grid-cols-2">
+          <label><span className="text-sm text-slate-700">Genero</span>
+            <select name="victimGender" className={inputCls}>{GENDERS.map((g) => <option key={g} value={g}>{g}</option>)}</select></label>
+          <label><span className="text-sm text-slate-700">Grupo de edad</span>
+            <select name="victimAgeGroup" className={inputCls}>{AGE_GROUPS.map((a) => <option key={a} value={a}>{a}</option>)}</select></label>
+        </div>
+      </section>
+
+      <section className="space-y-2">
+        <label><span className="text-sm font-medium text-slate-700">Autoridad o institucion senalada <span className="font-normal text-slate-400">(opcional)</span></span>
+          <input name="authorityName" placeholder="Ej. Hospital General, Fiscalia, Ayuntamiento" className={inputCls} /></label>
       </section>
 
       <label className="flex items-center gap-2 text-sm text-slate-700">

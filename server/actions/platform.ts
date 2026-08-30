@@ -1322,7 +1322,12 @@ export async function createMemberReportAction(_: ActionResult | null, formData:
     openedAt: new Date(),
     incidentDate: d.incidentDate ? new Date(d.incidentDate) : null,
     incidentLocation: d.incidentLocation || null,
+    rightViolated: d.rightViolated || null,
   });
+  const affectedDemographics = {
+    ...(d.victimGender ? { genero: d.victimGender } : {}),
+    ...(d.victimAgeGroup ? { grupoEdad: d.victimAgeGroup } : {}),
+  };
   // Persona afectada: el propio miembro, o la persona que reporta a nombre de.
   const people: Array<typeof schema.casePeople.$inferInsert> = [];
   if (d.onBehalf && d.affectedName?.trim()) {
@@ -1331,7 +1336,7 @@ export async function createMemberReportAction(_: ActionResult | null, formData:
       personType: "victima",
       name: d.affectedName.trim(),
       contact: d.affectedContact?.trim() || "Reservado",
-      demographicData: d.affectedRelation ? { relacion: d.affectedRelation } : {},
+      demographicData: { ...affectedDemographics, ...(d.affectedRelation ? { relacion: d.affectedRelation } : {}) },
       consentStatus: d.consentStatus,
     });
     // El miembro es quien reporta (solicitante).
@@ -1349,8 +1354,19 @@ export async function createMemberReportAction(_: ActionResult | null, formData:
       personType: "victima",
       name: member.fullName,
       contact: member.phone || "Reservado",
-      demographicData: {},
+      demographicData: affectedDemographics,
       consentStatus: d.consentStatus,
+    });
+  }
+  // Autoridad o institucion senalada.
+  if (d.authorityName?.trim()) {
+    people.push({
+      caseId: id,
+      personType: "autoridad",
+      name: d.authorityName.trim(),
+      contact: "N/A",
+      demographicData: {},
+      consentStatus: "no_aplica",
     });
   }
   await db.insert(schema.casePeople).values(people);

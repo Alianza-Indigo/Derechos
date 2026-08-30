@@ -252,12 +252,18 @@ export const memberReportSchema = z.object({
   description: z.string().min(20, "Describe los hechos con el mayor detalle posible."),
   incidentDate: z.string().optional(),
   incidentLocation: z.string().optional(),
+  rightViolated: z.string().optional(),
+  // Datos de la persona afectada (aplican a ti o a la persona por la que reportas).
+  victimGender: z.string().optional(),
+  victimAgeGroup: z.string().optional(),
   // ¿Reporta por otra persona? Si es asi, se capturan los datos de la persona
   // afectada; de lo contrario la persona afectada es el propio miembro.
   onBehalf: formBoolean.default(false),
   affectedName: z.string().optional(),
   affectedContact: z.string().optional(),
   affectedRelation: z.string().optional(),
+  // Autoridad o institucion senalada.
+  authorityName: z.string().optional(),
   consentStatus: z.enum(["documentado", "pendiente", "no_aplica"]).default("pendiente"),
 });
 
