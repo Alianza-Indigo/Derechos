@@ -8,6 +8,7 @@ import * as schema from "@/drizzle/schema";
 import { runAssistant } from "@/lib/ai/adapters";
 import { normalizeSearch } from "@/lib/utils";
 import { planCapacityError } from "@/server/permissions/plan";
+import { createNotification } from "@/server/notify/create";
 import {
   aiFeedbackSchema,
   aiRunSchema,
@@ -1557,6 +1558,15 @@ export async function createMemberReportAction(_: ActionResult | null, formData:
     changedBy: user.id,
   });
   await writeAuditLog({ actorId: user.id, action: "case.member_report", entityType: "case", entityId: id, after: { caseNumber, category: parsed.data.category } });
+  await createNotification({
+    organizationId: org,
+    kind: "member_report",
+    title: `Nuevo reporte de miembro: ${caseNumber}`,
+    body: `${parsed.data.category} — ${d.title}`,
+    entityType: "case",
+    entityId: id,
+    href: `/casos/${id}`,
+  });
   revalidatePath("/portal/mis-reportes");
   return { ok: true, message: `Reporte ${caseNumber} enviado. El equipo le dara seguimiento.` };
 }

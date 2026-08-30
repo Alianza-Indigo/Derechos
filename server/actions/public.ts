@@ -9,6 +9,7 @@ import { writeAuditLog } from "@/server/audit/log";
 import { rateLimit } from "@/lib/rate-limit";
 import { getPublicSiteFromHeaders } from "@/server/queries/tenant";
 import { planCapacityError } from "@/server/permissions/plan";
+import { createNotification } from "@/server/notify/create";
 
 type ActionResult = { ok: boolean; message: string };
 
@@ -154,6 +155,15 @@ export async function submitPublicReportAction(_: ActionResult | null, formData:
     entityId: id,
     after: { caseNumber, category: d.category, anonymous },
     ip: ip === "local" ? undefined : ip,
+  });
+  await createNotification({
+    organizationId: org,
+    kind: "public_report",
+    title: `Nuevo reporte publico: ${caseNumber}`,
+    body: `${d.category} — ${d.title}${anonymous ? " (anonimo)" : ""}`,
+    entityType: "case",
+    entityId: id,
+    href: `/casos/${id}`,
   });
 
   return { ok: true, message: `Reporte recibido. Tu folio es ${caseNumber}. El equipo le dara seguimiento.` };

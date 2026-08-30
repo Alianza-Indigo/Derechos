@@ -491,6 +491,24 @@ export const aiFeedback = pgTable("ai_feedback", {
   createdAt,
 });
 
+// Avisos operativos por organizacion (p. ej. un reporte nuevo del publico o de
+// un miembro). Estado de lectura a nivel org: se marca leido con readAt/readBy.
+export const notifications = pgTable("notifications", {
+  id: id(),
+  organizationId: orgId(),
+  kind: text("kind").notNull(),
+  title: text("title").notNull(),
+  body: text("body"),
+  entityType: text("entity_type"),
+  entityId: text("entity_id"),
+  href: text("href"),
+  readAt: timestamp("read_at", { withTimezone: true }),
+  readBy: uuid("read_by").references(() => users.id),
+  createdAt,
+}, (table) => ({
+  orgIdx: index("notifications_org_idx").on(table.organizationId),
+}));
+
 export const auditLogs = pgTable("audit_logs", {
   id: id(),
   // Nullable: los eventos de sistema (cron de retencion) no tienen tenant.

@@ -1,16 +1,18 @@
 import Link from "next/link";
-import { Building2 } from "lucide-react";
+import { Building2, Bell } from "lucide-react";
 import type { CSSProperties, ReactNode } from "react";
 import { navigationItems, APP_NAME } from "@/lib/constants";
 import { LogoutButton } from "@/components/layout/logout-button";
 import { cn, initials } from "@/lib/utils";
 import { getCurrentUser } from "@/server/queries/app";
 import { getOrganizationBranding } from "@/server/queries/tenant";
+import { getUnreadNotificationCount } from "@/server/queries/notifications";
 import { isPlatformOwner } from "@/server/permissions/platform";
 
 export async function AppShell({ children }: { children: ReactNode }) {
   const user = await getCurrentUser();
   const branding = await getOrganizationBranding(user.organizationId);
+  const unread = await getUnreadNotificationCount();
   const orgName = branding?.name || APP_NAME;
   // El color de marca del inquilino se expone como variable CSS --brand para
   // que el boton primario y el chrome de identidad la adopten.
@@ -56,6 +58,12 @@ export async function AppShell({ children }: { children: ReactNode }) {
               <p className="text-sm font-medium text-slate-950">{user.name}</p>
               <p className="text-xs text-slate-500">{user.roles.join(", ")}</p>
             </div>
+            <Link href="/notificaciones" className="relative flex size-9 items-center justify-center rounded-full border border-slate-200 text-slate-600 hover:bg-slate-100" title="Avisos" aria-label={`Avisos${unread ? ` (${unread} sin leer)` : ""}`}>
+              <Bell className="size-4" />
+              {unread > 0 ? (
+                <span className="absolute -right-1 -top-1 flex min-w-4 items-center justify-center rounded-full bg-rose-600 px-1 text-[10px] font-bold text-white">{unread > 99 ? "99+" : unread}</span>
+              ) : null}
+            </Link>
             <div className="flex size-9 items-center justify-center rounded-full bg-slate-900 text-xs font-bold text-white">{initials(user.name)}</div>
             <LogoutButton />
           </div>
