@@ -2,11 +2,13 @@
 
 import { revalidatePath } from "next/cache";
 import { hash } from "bcryptjs";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import * as schema from "@/drizzle/schema";
 import {
   organizationCreateSchema,
+  organizationDetailsSchema,
   organizationDomainSchema,
+  orgAdminPasswordSchema,
   organizationPlanSchema,
   organizationSignupSchema,
   organizationStatusSchema,
@@ -208,6 +210,77 @@ export async function setOrganizationDomainAction(_: ActionResult | null, formDa
   });
   revalidatePath("/plataforma");
   return { ok: true, message: domain ? "Dominio propio configurado. Apunta el DNS y agregalo en tu hosting." : "Dominio propio removido." };
+}
+
+// La duena de la plataforma edita datos basicos de cualquier organizacion.
+export async function updateOrganizationDetailsAction(_: ActionResult | null, formData: FormData): Promise<ActionResult> {
+  const actor = await getCurrentUser();
+  if (!isPlatformOwner(actor)) {
+    return DENIED;
+  }
+  const parsed = organizationDetailsSchema.safeParse(Object.fromEntries(formData));
+  if (!parsed.success) {
+    return { ok: false, message: parsed.error.issues[0]?.message ?? "Datos invalidos." };
+  }
+  const db = getDb();
+  const [org] = await db.select({ id: schema.organizations.id }).from(schema.organizations).where(eq(schema.organizations.id, parsed.data.organizationId)).limit(1);
+  if (!org) {
+    return { ok: false, message: "La organizacion no existe." };
+  }
+  await db
+    .update(schema.organizations)
+    .set({
+      name: parsed.data.name,
+      legalName: parsed.data.legalName || null,
+      country: parsed.data.country,
+      primaryColor: parsed.data.primaryColor,
+      updatedAt: new Date(),
+    })
+    .where(eq(schema.organizations.id, parsed.data.organizationId));
+  await writeAuditLog({
+    actorId: actor.id,
+    organizationId: parsed.data.organizationId,
+    action: "organization.details_update",
+    entityType: "organization",
+    entityId: parsed.data.organizationId,
+    after: { name: parsed.data.name, country: parsed.data.country },
+  });
+  revalidatePath(`/plataforma/${parsed.data.organizationId}`);
+  revalidatePath("/plataforma");
+  return { ok: true, message: "Datos de la organizacion actualizados." };
+}
+
+// La duena de la plataforma restablece la contrasena de un usuario (admin) de
+// una organizacion, util para recuperar acceso de un inquilino.
+export async function resetOrgAdminPasswordAction(_: ActionResult | null, formData: FormData): Promise<ActionResult> {
+  const actor = await getCurrentUser();
+  if (!isPlatformOwner(actor)) {
+    return DENIED;
+  }
+  const parsed = orgAdminPasswordSchema.safeParse(Object.fromEntries(formData));
+  if (!parsed.success) {
+    return { ok: false, message: parsed.error.issues[0]?.message ?? "Datos invalidos." };
+  }
+  const db = getDb();
+  const [target] = await db
+    .select({ id: schema.users.id })
+    .from(schema.users)
+    .where(and(eq(schema.users.id, parsed.data.userId), eq(schema.users.organizationId, parsed.data.organizationId)))
+    .limit(1);
+  if (!target) {
+    return { ok: false, message: "El usuario no pertenece a esa organizacion." };
+  }
+  const passwordHash = await hash(parsed.data.password, 12);
+  await db.update(schema.users).set({ passwordHash, status: "active", updatedAt: new Date() }).where(eq(schema.users.id, parsed.data.userId));
+  await writeAuditLog({
+    actorId: actor.id,
+    organizationId: parsed.data.organizationId,
+    action: "organization.admin_password_reset",
+    entityType: "user",
+    entityId: parsed.data.userId,
+  });
+  revalidatePath(`/plataforma/${parsed.data.organizationId}`);
+  return { ok: true, message: "Contrasena restablecida. Comparte la nueva credencial de forma segura." };
 }
 
 // Auto-registro publico de una organizacion. Crea la organizacion en estado

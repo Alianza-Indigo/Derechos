@@ -162,6 +162,22 @@ export const organizationStatusSchema = z.object({
   status: z.enum(["active", "suspended"]),
 });
 
+// La duena de la plataforma edita datos basicos de una organizacion.
+export const organizationDetailsSchema = z.object({
+  organizationId: z.string().min(1),
+  name: z.string().min(2, "Captura el nombre publico."),
+  legalName: z.string().optional(),
+  country: z.string().min(2, "Captura el pais base."),
+  primaryColor: z.string().regex(/^#[0-9a-fA-F]{6}$/, "Usa un color hexadecimal (#RRGGBB)."),
+});
+
+// La duena de la plataforma restablece la contrasena de un usuario de una org.
+export const orgAdminPasswordSchema = z.object({
+  organizationId: z.string().min(1),
+  userId: z.string().min(1),
+  password: z.string().min(8, "La contrasena debe tener al menos 8 caracteres."),
+});
+
 export const organizationPlanSchema = z.object({
   organizationId: z.string().min(1),
   plan: z.enum(["gratuito", "pro", "institucional"]),

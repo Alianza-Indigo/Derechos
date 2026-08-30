@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useActionState } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -46,7 +47,7 @@ export function CreateOrganizationForm() {
   );
 }
 
-function StatusControls({ org }: { org: OrganizationRow }) {
+export function StatusControls({ org }: { org: OrganizationRow }) {
   const [state, action, pending] = useActionState(setOrganizationStatusAction, null);
   return (
     <form action={action} className="inline-flex items-center gap-2">
@@ -67,7 +68,7 @@ function StatusControls({ org }: { org: OrganizationRow }) {
   );
 }
 
-function PlanControl({ org }: { org: OrganizationRow }) {
+export function PlanControl({ org }: { org: OrganizationRow }) {
   const [state, action, pending] = useActionState(setOrganizationPlanAction, null);
   return (
     <form action={action} className="inline-flex items-center gap-2">
@@ -81,7 +82,7 @@ function PlanControl({ org }: { org: OrganizationRow }) {
   );
 }
 
-function DomainControl({ org }: { org: OrganizationRow }) {
+export function DomainControl({ org }: { org: OrganizationRow }) {
   const [state, action, pending] = useActionState(setOrganizationDomainAction, null);
   return (
     <form action={action} className="flex flex-wrap items-center gap-2">
@@ -101,7 +102,7 @@ export function OrganizationsTable({ organizations, rootDomain }: { organization
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
               <p className="font-medium text-slate-900">
-                {org.name}{" "}
+                <Link href={`/plataforma/${org.id}`} className="hover:underline">{org.name}</Link>{" "}
                 <Badge tone={statusTone[org.status] ?? "slate"}>{statusLabel[org.status] ?? org.status}</Badge>{" "}
                 <Badge tone="slate">plan {planLabel(org.plan)}</Badge>
               </p>
