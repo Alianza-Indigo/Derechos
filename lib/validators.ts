@@ -23,6 +23,10 @@ const formBoolean = z.union([z.boolean(), z.enum(["true", "false", "on", "1", "0
   return value === "true" || value === "on" || value === "1";
 });
 
+// Casilla (checkbox) de formulario: ausente => false. A diferencia de
+// formBoolean, tolera que la clave no venga en el FormData (checkbox sin marcar).
+const checkboxBoolean = z.preprocess((value) => value === true || value === "on" || value === "true" || value === "1", z.boolean());
+
 export const memberFormSchema = z.object({
   fullName: z.string().min(3, "Captura el nombre completo."),
   birthDate: z.string().min(4, "Captura fecha de nacimiento."),
@@ -199,11 +203,28 @@ export const organizationSignupSchema = z.object({
   adminPassword: z.string().min(8, "La contrasena debe tener al menos 8 caracteres."),
 });
 
+// Reporte/denuncia enviado por el publico desde la landing. No requiere
+// sesion. El consentimiento de tratamiento de datos es obligatorio.
+export const publicReportSchema = z.object({
+  title: z.string().min(4, "Describe el asunto en pocas palabras."),
+  category: z.string().min(2, "Selecciona una categoria."),
+  description: z.string().min(20, "Describe los hechos con al menos 20 caracteres."),
+  incidentDate: z.string().optional(),
+  incidentLocation: z.string().max(200).optional(),
+  rightViolated: z.string().max(200).optional(),
+  reporterName: z.string().max(160).optional(),
+  reporterContact: z.string().max(160).optional(),
+  affectedName: z.string().max(160).optional(),
+  anonymous: checkboxBoolean,
+  consent: checkboxBoolean.refine((value) => value === true, "Debes aceptar el aviso de privacidad."),
+});
+
 // Edicion de la landing page publica del inquilino. Campos de texto libres;
 // las URLs se validan con laxitud (opcionales).
 const optionalUrl = z.string().trim().url("URL invalida.").optional().or(z.literal(""));
 export const landingSchema = z.object({
-  published: formBoolean,
+  published: checkboxBoolean,
+  acceptsPublicReports: checkboxBoolean,
   tagline: z.string().max(160).optional(),
   about: z.string().max(2000).optional(),
   mission: z.string().max(2000).optional(),

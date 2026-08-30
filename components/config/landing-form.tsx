@@ -22,6 +22,10 @@ export function LandingForm({ landing, publicUrl }: { landing: LandingContent; p
         <input type="checkbox" name="published" defaultChecked={landing.published} className="size-4" />
         Publicar la landing (visible para el publico en tu subdominio/dominio)
       </label>
+      <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
+        <input type="checkbox" name="acceptsPublicReports" defaultChecked={landing.acceptsPublicReports ?? false} className="size-4" />
+        Recibir reportes/denuncias del publico (formulario en la landing)
+      </label>
 
       <label className="block"><span className="text-sm font-medium text-slate-700">Lema / tagline</span>
         <input name="tagline" defaultValue={landing.tagline ?? ""} maxLength={160} className={inputCls} placeholder="Defendemos los derechos de..." />

@@ -4,6 +4,8 @@
 
 export type LandingContent = {
   published: boolean;
+  // Habilita el formulario publico de reportes/denuncias en la landing.
+  acceptsPublicReports?: boolean;
   tagline?: string;
   about?: string;
   mission?: string;
@@ -27,6 +29,7 @@ export function normalizeLanding(value: unknown): LandingContent {
   const str = (key: string) => (typeof v[key] === "string" && v[key] ? (v[key] as string) : undefined);
   return {
     published: v.published === true,
+    acceptsPublicReports: v.acceptsPublicReports === true,
     tagline: str("tagline"),
     about: str("about"),
     mission: str("mission"),

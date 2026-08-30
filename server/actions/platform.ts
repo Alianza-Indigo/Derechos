@@ -992,6 +992,7 @@ export async function updateLandingAction(_: ActionResult | null, formData: Form
   };
   const landing: LandingContent = {
     published: d.published,
+    acceptsPublicReports: d.acceptsPublicReports,
     tagline: clean(d.tagline),
     about: clean(d.about),
     mission: clean(d.mission),

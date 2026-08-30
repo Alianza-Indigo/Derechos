@@ -41,7 +41,12 @@ export function TenantLanding({ site }: { site: PublicSite }) {
               <h1 className="text-3xl font-bold sm:text-4xl">{site.name}</h1>
               {landing.tagline ? <p className="mt-4 text-lg opacity-90">{landing.tagline}</p> : null}
               <div className="mt-8 flex flex-wrap gap-3">
-                <Link href="/login" className="inline-flex h-11 items-center rounded-md bg-[var(--brand,#0f766e)] px-5 text-sm font-medium text-white hover:brightness-95">
+                {landing.acceptsPublicReports ? (
+                  <Link href="/reportar" className="inline-flex h-11 items-center rounded-md bg-[var(--brand,#0f766e)] px-5 text-sm font-medium text-white hover:brightness-95">
+                    Presentar un reporte
+                  </Link>
+                ) : null}
+                <Link href="/login" className={`inline-flex h-11 items-center rounded-md px-5 text-sm font-medium ${landing.acceptsPublicReports ? "border border-current text-current hover:opacity-80" : "bg-[var(--brand,#0f766e)] text-white hover:brightness-95"}`}>
                   Acceder al panel
                 </Link>
                 {landing.contactEmail ? (
