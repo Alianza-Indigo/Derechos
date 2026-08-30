@@ -220,7 +220,10 @@ export async function deleteMemberAction(_: ActionResult | null, formData: FormD
 // --------------------------------------------------------------------------
 export async function createCaseAction(_: ActionResult | null, formData: FormData): Promise<ActionResult> {
   const user = await getCurrentUser();
-  if (!can(user, ["write:case", "write:territory"])) {
+  // Disponible para todos los colaboradores (cualquier rol de personal con
+  // capacidad de captura); los miembros usan el portal y los auditores solo
+  // leen.
+  if (!can(user, ["write:case", "write:territory", "write:field", "write:event", "write:limited", "read:national", "*"])) {
     return DENIED;
   }
   const parsed = caseIntakeSchema.safeParse(Object.fromEntries(formData));
@@ -228,9 +231,6 @@ export async function createCaseAction(_: ActionResult | null, formData: FormDat
     return { ok: false, message: parsed.error.issues[0]?.message ?? "Datos invalidos." };
   }
   const d = parsed.data;
-  if (!canAccessTerritory(user, d.territoryId)) {
-    return { ok: false, message: "No puedes abrir casos fuera de tu territorio." };
-  }
 
   const db = getDb();
   const [{ total }] = await db.select({ total: sql<number>`count(*)::int` }).from(schema.cases);
