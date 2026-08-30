@@ -1307,27 +1307,53 @@ export async function createMemberReportAction(_: ActionResult | null, formData:
   // El miembro es quien abre el reporte; queda sin responsable asignado (se
   // asigna al propio miembro como marcador) y en estado "Nuevo" para que el
   // personal del territorio lo triage y reasigne.
+  const d = parsed.data;
   await db.insert(schema.cases).values({
     id,
     caseNumber,
-    title: parsed.data.title,
-    description: parsed.data.description,
-    category: parsed.data.category,
+    title: d.title,
+    description: d.description,
+    category: d.category,
     priority: "Media",
     status: "Nuevo",
     territoryId: member.territoryId,
     openedBy: user.id,
     assignedTo: user.id,
     openedAt: new Date(),
+    incidentDate: d.incidentDate ? new Date(d.incidentDate) : null,
+    incidentLocation: d.incidentLocation || null,
   });
-  await db.insert(schema.casePeople).values({
-    caseId: id,
-    personType: "solicitante",
-    name: member.fullName,
-    contact: "Reservado",
-    demographicData: {},
-    consentStatus: parsed.data.consentStatus,
-  });
+  // Persona afectada: el propio miembro, o la persona que reporta a nombre de.
+  const people: Array<typeof schema.casePeople.$inferInsert> = [];
+  if (d.onBehalf && d.affectedName?.trim()) {
+    people.push({
+      caseId: id,
+      personType: "victima",
+      name: d.affectedName.trim(),
+      contact: d.affectedContact?.trim() || "Reservado",
+      demographicData: d.affectedRelation ? { relacion: d.affectedRelation } : {},
+      consentStatus: d.consentStatus,
+    });
+    // El miembro es quien reporta (solicitante).
+    people.push({
+      caseId: id,
+      personType: "solicitante",
+      name: member.fullName,
+      contact: member.phone || "Reservado",
+      demographicData: {},
+      consentStatus: d.consentStatus,
+    });
+  } else {
+    people.push({
+      caseId: id,
+      personType: "victima",
+      name: member.fullName,
+      contact: member.phone || "Reservado",
+      demographicData: {},
+      consentStatus: d.consentStatus,
+    });
+  }
+  await db.insert(schema.casePeople).values(people);
   await db.insert(schema.caseStatusHistory).values({
     caseId: id,
     fromStatus: null,
