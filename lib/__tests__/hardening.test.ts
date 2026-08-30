@@ -81,6 +81,23 @@ describe("endurecimiento del review", () => {
     expect(memberDeleteSchema.safeParse({ memberId: "m1" }).success).toBe(false);
   });
 
+  it("valida el formato de admision de caso", async () => {
+    const { caseIntakeSchema } = await import("@/lib/validators");
+    const ok = caseIntakeSchema.safeParse({
+      title: "Negacion de atencion medica",
+      category: "Salud",
+      priority: "Alta",
+      status: "Nuevo",
+      territoryId: "t1",
+      assignedTo: "u1",
+      description: "Se nego atencion medica a la persona el dia de los hechos en el hospital.",
+      victimName: "Reservado",
+      consentStatus: "pendiente",
+    });
+    expect(ok.success).toBe(true);
+    expect(caseIntakeSchema.safeParse({ title: "x", category: "Salud", priority: "Alta", status: "Nuevo", territoryId: "t1", assignedTo: "u1", description: "corta", victimName: "R", consentStatus: "pendiente" }).success).toBe(false);
+  });
+
   it("acepta el puesto opcional del miembro", () => {
     expect(memberPositionSchema.safeParse({ memberId: "m1", position: "Presidente" }).success).toBe(true);
     expect(memberPositionSchema.safeParse({ memberId: "m1" }).success).toBe(true);

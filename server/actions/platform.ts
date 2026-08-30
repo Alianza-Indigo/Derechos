@@ -10,7 +10,7 @@ import { normalizeSearch } from "@/lib/utils";
 import {
   aiFeedbackSchema,
   aiRunSchema,
-  caseFormSchema,
+  caseIntakeSchema,
   credentialActionSchema,
   locationPurgeSchema,
   casePersonSchema,
@@ -223,9 +223,13 @@ export async function createCaseAction(_: ActionResult | null, formData: FormDat
   if (!can(user, ["write:case", "write:territory"])) {
     return DENIED;
   }
-  const parsed = caseFormSchema.safeParse(Object.fromEntries(formData));
+  const parsed = caseIntakeSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) {
     return { ok: false, message: parsed.error.issues[0]?.message ?? "Datos invalidos." };
+  }
+  const d = parsed.data;
+  if (!canAccessTerritory(user, d.territoryId)) {
+    return { ok: false, message: "No puedes abrir casos fuera de tu territorio." };
   }
 
   const db = getDb();
@@ -235,37 +239,71 @@ export async function createCaseAction(_: ActionResult | null, formData: FormDat
   await db.insert(schema.cases).values({
     id,
     caseNumber,
-    title: parsed.data.title,
-    description: parsed.data.description,
-    category: parsed.data.category,
-    priority: parsed.data.priority,
-    status: parsed.data.status,
-    territoryId: parsed.data.territoryId,
+    title: d.title,
+    description: d.description,
+    category: d.category,
+    priority: d.priority,
+    status: d.status,
+    territoryId: d.territoryId,
     openedBy: user.id,
-    assignedTo: parsed.data.assignedTo,
+    assignedTo: d.assignedTo,
     openedAt: new Date(),
+    incidentDate: d.incidentDate ? new Date(d.incidentDate) : null,
+    incidentLocation: d.incidentLocation || null,
+    rightViolated: d.rightViolated || null,
   });
-  await db.insert(schema.casePeople).values({
-    caseId: id,
-    personType: "solicitante",
-    name: "Persona protegida",
-    contact: "Reservado",
-    demographicData: {},
-    consentStatus: parsed.data.consentStatus,
-  });
+
+  // Persona afectada (victima)
+  const people: Array<typeof schema.casePeople.$inferInsert> = [
+    {
+      caseId: id,
+      personType: "victima",
+      name: d.victimName,
+      contact: d.victimContact?.trim() || "Reservado",
+      demographicData: {
+        ...(d.victimGender ? { genero: d.victimGender } : {}),
+        ...(d.victimAgeGroup ? { grupoEdad: d.victimAgeGroup } : {}),
+      },
+      consentStatus: d.consentStatus,
+    },
+  ];
+  // Quien reporta, si es distinto de la persona afectada
+  if (d.reporterName?.trim()) {
+    people.push({
+      caseId: id,
+      personType: "solicitante",
+      name: d.reporterName.trim(),
+      contact: d.reporterContact?.trim() || "Reservado",
+      demographicData: d.reporterRelation ? { relacion: d.reporterRelation } : {},
+      consentStatus: d.consentStatus,
+    });
+  }
+  // Autoridad o institucion senalada
+  if (d.authorityName?.trim()) {
+    people.push({
+      caseId: id,
+      personType: "autoridad",
+      name: d.authorityName.trim(),
+      contact: "N/A",
+      demographicData: {},
+      consentStatus: "no_aplica",
+    });
+  }
+  await db.insert(schema.casePeople).values(people);
+
   await db.insert(schema.caseStatusHistory).values({
     caseId: id,
     fromStatus: null,
-    toStatus: parsed.data.status,
+    toStatus: d.status,
     reason: "Alta inicial del caso",
     changedBy: user.id,
   });
   await db.insert(schema.caseNotes).values({
     caseId: id,
-    note: "Caso creado desde formulario institucional.",
+    note: "Caso creado desde el formato de admision.",
     createdBy: user.id,
   });
-  await writeAuditLog({ actorId: user.id, action: "case.create", entityType: "case", entityId: id, after: { ...parsed.data, caseNumber } });
+  await writeAuditLog({ actorId: user.id, action: "case.create", entityType: "case", entityId: id, after: { caseNumber, category: d.category, priority: d.priority } });
   redirect(`/casos/${id}`);
 }
 

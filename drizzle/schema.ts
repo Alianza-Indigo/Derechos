@@ -147,6 +147,9 @@ export const cases = pgTable("cases", {
   openedAt: timestamp("opened_at", { withTimezone: true }).defaultNow().notNull(),
   closedAt: timestamp("closed_at", { withTimezone: true }),
   dueDate: timestamp("due_date", { withTimezone: true }),
+  incidentDate: timestamp("incident_date", { withTimezone: true }),
+  incidentLocation: text("incident_location"),
+  rightViolated: text("right_violated"),
   createdAt,
   updatedAt,
 }, (table) => ({

@@ -30,6 +30,9 @@ export default async function CaseDetailPage({ params }: { params: Promise<{ id:
           <div><p className="text-xs text-slate-500">Territorio</p><p className="font-medium">{getTerritoryName(record.territoryId)}</p></div>
           <div><p className="text-xs text-slate-500">Responsable</p><p className="font-medium">{getUserName(record.assignedTo)}</p></div>
           <div><p className="text-xs text-slate-500">Apertura</p><p className="font-medium">{formatDate(record.openedAt)}</p></div>
+          {record.incidentDate ? <div><p className="text-xs text-slate-500">Fecha de los hechos</p><p className="font-medium">{formatDate(record.incidentDate)}</p></div> : null}
+          {record.incidentLocation ? <div><p className="text-xs text-slate-500">Lugar de los hechos</p><p className="font-medium">{record.incidentLocation}</p></div> : null}
+          {record.rightViolated ? <div><p className="text-xs text-slate-500">Derecho vulnerado</p><p className="font-medium">{record.rightViolated}</p></div> : null}
         </div>
         <p className="mt-5 text-sm leading-6 text-slate-700">{record.description}</p>
       </Card>

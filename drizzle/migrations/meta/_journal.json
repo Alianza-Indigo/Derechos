@@ -43,6 +43,13 @@
       "when": 1788060122655,
       "tag": "0005_true_freak",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1788062258703,
+      "tag": "0006_eager_dreaming_celestial",
+      "breakpoints": true
     }
   ]
 }

@@ -664,6 +664,9 @@ function dbCaseToDomain(
     openedAt: record.openedAt.toISOString(),
     closedAt: record.closedAt?.toISOString(),
     dueDate: record.dueDate?.toISOString(),
+    incidentDate: record.incidentDate?.toISOString(),
+    incidentLocation: record.incidentLocation ?? undefined,
+    rightViolated: record.rightViolated ?? undefined,
     persons: people.map((person) => ({
       id: person.id,
       personType: person.personType as "victima" | "solicitante" | "autoridad" | "testigo" | "otro",

@@ -51,6 +51,35 @@ export const caseFormSchema = z.object({
   consentStatus: z.enum(["documentado", "pendiente", "no_aplica"]),
 });
 
+// Formato de admision de caso: datos del caso + hechos + persona afectada +
+// quien reporta (opcional) + autoridad senalada (opcional).
+export const caseIntakeSchema = z.object({
+  // Caso
+  title: z.string().min(5, "Describe el titulo del caso."),
+  category: z.enum(caseCategories),
+  priority: z.enum(priorities),
+  status: z.enum(caseStatuses),
+  territoryId: z.string().min(1, "Selecciona territorio."),
+  assignedTo: z.string().min(1, "Selecciona responsable."),
+  description: z.string().min(20, "Describe los hechos con detalle suficiente."),
+  // Hechos
+  incidentDate: z.string().optional(),
+  incidentLocation: z.string().optional(),
+  rightViolated: z.string().optional(),
+  // Persona afectada
+  victimName: z.string().min(2, "Captura el nombre de la persona afectada (o 'Reservado')."),
+  victimContact: z.string().optional(),
+  victimGender: z.string().optional(),
+  victimAgeGroup: z.string().optional(),
+  consentStatus: z.enum(["documentado", "pendiente", "no_aplica"]),
+  // Quien reporta (si es distinto de la persona afectada)
+  reporterName: z.string().optional(),
+  reporterContact: z.string().optional(),
+  reporterRelation: z.string().optional(),
+  // Autoridad / institucion senalada
+  authorityName: z.string().optional(),
+});
+
 export const caseStatusUpdateSchema = z.object({
   caseId: z.string().min(1),
   status: z.enum(caseStatuses),
