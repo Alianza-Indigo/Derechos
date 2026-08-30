@@ -121,6 +121,10 @@ export async function createMemberAction(_: ActionResult | null, formData: FormD
 
   const db = getDb();
   const org = user.organizationId;
+  const refError = await orgRefError(db, org, { territoryId: parsed.data.territoryId });
+  if (refError) {
+    return { ok: false, message: refError };
+  }
   const overCapacity = await planCapacityError(org, "members");
   if (overCapacity) {
     return { ok: false, message: overCapacity };
@@ -916,6 +920,11 @@ export async function createPrevalenceRecordAction(_: ActionResult | null, formD
   if (refError) {
     return { ok: false, message: refError };
   }
+  // El indicador debe pertenecer al estudio indicado (coherencia intra-tenant).
+  const [metric] = await db.select({ studyId: schema.prevalenceMetrics.studyId }).from(schema.prevalenceMetrics).where(eq(schema.prevalenceMetrics.id, parsed.data.metricId)).limit(1);
+  if (!metric || metric.studyId !== parsed.data.studyId) {
+    return { ok: false, message: "El indicador no pertenece al estudio seleccionado." };
+  }
   const id = crypto.randomUUID();
   await db.insert(schema.prevalenceRecords).values({
     id,
@@ -1115,6 +1124,10 @@ export async function updateTerritoryLocationSettingAction(_: ActionResult | nul
     return { ok: false, message: parsed.error.issues[0]?.message ?? "Datos invalidos." };
   }
   const db = getDb();
+  const refError = await orgRefError(db, user.organizationId, { territoryId: parsed.data.territoryId });
+  if (refError) {
+    return { ok: false, message: refError };
+  }
   const [existing] = await db.select({ id: schema.territoryLocationSettings.id }).from(schema.territoryLocationSettings).where(and(eq(schema.territoryLocationSettings.organizationId, user.organizationId), eq(schema.territoryLocationSettings.territoryId, parsed.data.territoryId))).limit(1);
   const values = {
     enabled: parsed.data.enabled,
@@ -1349,6 +1362,12 @@ export async function createUserAction(_: ActionResult | null, formData: FormDat
   if (!roleId) {
     return { ok: false, message: "El rol seleccionado no existe." };
   }
+  if (parsed.data.territoryId) {
+    const refError = await orgRefError(db, org, { territoryId: parsed.data.territoryId });
+    if (refError) {
+      return { ok: false, message: refError };
+    }
+  }
   const id = crypto.randomUUID();
   await db.insert(schema.users).values({
     id,
@@ -1412,6 +1431,12 @@ export async function assignUserRoleAction(_: ActionResult | null, formData: For
     return { ok: false, message: "El rol seleccionado no existe." };
   }
   const scoped = Boolean(parsed.data.territoryId);
+  if (scoped) {
+    const refError = await orgRefError(db, org, { territoryId: parsed.data.territoryId });
+    if (refError) {
+      return { ok: false, message: refError };
+    }
+  }
   await db.insert(schema.userRoles).values({
     organizationId: org,
     userId: parsed.data.userId,
