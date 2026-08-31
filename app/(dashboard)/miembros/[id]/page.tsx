@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardHeader } from "@/components/ui/card";
@@ -44,6 +45,11 @@ export default async function MemberDetailPage({ params }: { params: Promise<{ i
             <Badge tone={credentialTone[member.credentialStatus] ?? "slate"}>{member.credentialStatus}</Badge>
             {member.credentialExpiresAt ? <span className="text-xs text-slate-500">vence {formatDate(member.credentialExpiresAt)}</span> : null}
           </div>
+          {member.credentialSlug ? (
+            <Link href={`/credencial/${member.credentialSlug}`} target="_blank" className="mt-3 inline-block text-sm text-teal-700 underline">
+              Ver credencial publica (QR)
+            </Link>
+          ) : null}
         </div>
         {canManage ? (
           <div className="mt-4 border-t border-slate-100 pt-4">

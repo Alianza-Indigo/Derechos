@@ -7,7 +7,6 @@ import {
   FileText,
   Gauge,
   MapPinned,
-  QrCode,
   Settings,
   ShieldCheck,
   Users,
@@ -41,7 +40,6 @@ export const navigationItems = [
   { href: "/reportes", label: "Reportes", icon: FileText },
   { href: "/configuracion", label: "Configuracion", icon: Settings },
   { href: "/auditoria", label: "Auditoria", icon: ShieldCheck },
-  { href: "/credencial/demo-chihuahua-001", label: "QR publico", icon: QrCode },
   { href: "/operacion-territorial/geolocalizacion", label: "Mapa interno", icon: Activity },
 ];
 

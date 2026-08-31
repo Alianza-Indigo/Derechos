@@ -1,14 +1,25 @@
 import { Card, CardHeader, KpiCard } from "@/components/ui/card";
 import { DataTable } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { LinkButton } from "@/components/ui/button";
 import { BarSummary, LineSummary } from "@/components/charts/dashboard-charts";
 import { LeafletMap } from "@/components/maps/leaflet-map";
-import { getDashboardData, getTerritories, getTerritoryName } from "@/server/queries/app";
+import { getCurrentUser, getDashboardData, getTerritories, getTerritoryName } from "@/server/queries/app";
+import { hasAnyPermission } from "@/server/permissions/rbac";
 import { formatDate, formatDateTime } from "@/lib/utils";
 
+const quickActions = [
+  { href: "/casos/nuevo", label: "Nuevo caso", perms: ["write:case", "write:territory", "write:field", "write:event", "write:limited", "read:national", "*"] },
+  { href: "/miembros/nuevo", label: "Nuevo miembro", perms: ["write:territory", "write:limited", "*"] },
+  { href: "/eventos/nuevo", label: "Nuevo evento", perms: ["write:event", "write:territory", "*"] },
+  { href: "/operacion-territorial/comisiones/nueva", label: "Nueva comision", perms: ["write:field", "write:territory", "*"] },
+  { href: "/asistente", label: "Asistente IA", perms: ["ai:use", "ai:admin", "*"] },
+  { href: "/reportes", label: "Reportes", perms: ["reports:export", "read:national", "read:territory", "*"] },
+];
+
 export default async function DashboardPage() {
-  const data = await getDashboardData();
-  const territories = await getTerritories();
+  const [data, territories, user] = await Promise.all([getDashboardData(), getTerritories(), getCurrentUser()]);
+  const actions = quickActions.filter((action) => hasAnyPermission(user, action.perms));
 
   return (
     <div className="space-y-6">
@@ -16,6 +27,14 @@ export default async function DashboardPage() {
         <h2 className="text-2xl font-semibold text-slate-950">Dashboard ejecutivo</h2>
         <p className="mt-1 text-sm text-slate-600">Indicadores reales del seed y estructura lista para Postgres en Vercel.</p>
       </div>
+
+      {actions.length ? (
+        <div className="flex flex-wrap gap-2">
+          {actions.map((action) => (
+            <LinkButton key={action.href} href={action.href} variant="secondary">{action.label}</LinkButton>
+          ))}
+        </div>
+      ) : null}
 
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {data.kpis.map((kpi) => (
